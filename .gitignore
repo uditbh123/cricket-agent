@@ -1,12 +1,9 @@
-# Created by venv; see https://docs.python.org/3/library/venv.html
-
-# Ignore the virtual enviroment folder 
+# Ignore the virtual environment folder
 venv/
 
-#ignore python cache files anywhere in the project 
+# Ignore python cache files
 __pycache__/
-*.pyc 
+*.pyc
 
-#ignore the cricket database folder
-cricket_db
-
+# Ignore the cricket database folder
+cricket_db/
