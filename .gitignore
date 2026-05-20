@@ -1,0 +1,11 @@
+# Created by venv; see https://docs.python.org/3/library/venv.html
+
+# Ignore the virtual enviroment folder 
+venv/
+
+#ignore python cache files anywhere in the project 
+__pycache__/
+*.pyc 
+
+ignore the cricket database folder
+backend/cricket_db/
