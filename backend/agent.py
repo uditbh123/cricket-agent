@@ -9,6 +9,8 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_chroma import Chroma
 
 embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 
