@@ -21,7 +21,7 @@ vectorstore = Chroma(
 
 retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
 
-llm = OllamaLLM(model="llama3.2")
+llm = OllamaLLM(model="llama3.2:1b")
 
 prompt_template = """You are a cricket expert assistant. Use the following context from Wikipedia to answer the question. If the answer is not in the context, say "I don't have enough information about that in my cricket knowledge base."
 
