@@ -1,9 +1,32 @@
-# Ignore the virtual environment folder
+# Python
 venv/
-
-# Ignore python cache files
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.eggs/
 
-# Ignore the cricket database folder
-cricket_db/
+# Vector database — this is large and rebuilds with ingest.py
+backend/cricket_db/
+
+# HuggingFace model cache
+.cache/
+
+# Environment variables (if you ever add API keys later)
+.env
+.env.local
+.env.*.local
+
+# Node / React
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
