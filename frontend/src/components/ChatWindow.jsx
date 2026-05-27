@@ -3,9 +3,9 @@ import ChatMessage from "./ChatMessage"
 
 const SUGGESTIONS = [
   "What are the Laws of Cricket?",
-  "How does the Duckworth-Lewis method work?",
-  "Who has scored the most Test centuries?",
-  "What is the difference between Test and ODI cricket?",
+  "How does Duckworth-Lewis work?",
+  "Who has the most Test centuries?",
+  "What is the difference between Test and T20?",
 ]
 
 function ChatWindow({ messages, isLoading, onSuggestion }) {
@@ -19,11 +19,11 @@ function ChatWindow({ messages, isLoading, onSuggestion }) {
     return (
       <div className="chat-window">
         <div className="empty-state">
-          {/* <div className="empty-icon">🏏</div> */}
+          <div className="empty-icon">🏏</div>
           <h2>Cricket Knowledge Agent</h2>
           <p>
-            Ask me anything about cricket — rules, players, tournaments,
-            records, or history. I answer from Wikipedia.
+            Ask me anything about cricket — rules, players,
+            tournaments, records, or history.
           </p>
           <div className="suggestions">
             {SUGGESTIONS.map((s, i) => (
@@ -47,7 +47,7 @@ function ChatWindow({ messages, isLoading, onSuggestion }) {
         <ChatMessage key={index} message={message} />
       ))}
 
-      {isLoading && (
+      {isLoading && messages[messages.length - 1]?.role !== "assistant" && (
         <div className="message assistant">
           <span className="message-label">Cricket Agent</span>
           <div className="typing-indicator">
