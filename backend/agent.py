@@ -92,3 +92,19 @@ def format_docs(docs):
             unique_docs.append(content)
 
     return "\n\n---\n\n".join(unique_docs)
+
+def rewrite_query(question: str, llm) -> str:
+    rewrite_prompt = f"""You are a cricket search assistant. 
+Rewrite this question into a better search query for finding 
+relevant cricket information. Include key cricket terms, 
+player names, and concepts. Return ONLY the rewritten query, 
+nothing else.
+
+Original question: {question}
+Rewritten search query:"""
+    
+    rewritten = llm.invoke(rewrite_prompt).strip()
+    # Safety check — if rewrite is too long or weird, use original
+    if len(rewritten) > 200 or len(rewritten) < 5:
+        return question
+    return rewritten
