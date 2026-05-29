@@ -35,8 +35,8 @@ print(f"\nTotal characters fetched: {len(combined_text)}")
 
 print("\nSplitting into chunks...")
 splitter = RecursiveCharacterTextSplitter(
-    chunk_size=500,
-    chunk_overlap=50
+    chunk_size=1500,
+    chunk_overlap=200
 )
 chunks = splitter.create_documents([combined_text])
 print(f"Total chunks: {len(chunks)}")
