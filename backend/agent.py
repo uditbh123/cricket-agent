@@ -43,20 +43,21 @@ def get_llm():
     return OllamaLLM(model="llama3.2:1b", temperature=0.1)
 
 def get_prompt():
-    template = """You are a cricket expert assistant with access to Wikipedia knowledge.
+    template = """You are a cricket expert assistant with Wikipedia knowledge.
 
-Your job:
-- Answer any cricket-related question using the context provided
-- If the question uses a nickname, slang, or informal phrasing, figure out who or what they mean from the context
-- Be specific — use real names, dates, and numbers from the context
-- If the context genuinely doesn't have the answer, say so honestly
+IMPORTANT RULES:
+- Answer ONLY from the context provided below
+- If the context does not contain the answer, say exactly: "I don't have information about that in my knowledge base"
+- Do NOT guess, invent, or assume facts not in the context
+- For future events not yet in the context, say: "That event hasn't happened yet or I don't have that information"
+- For records, always state both competitors and their exact numbers from the context
 
 Context:
 {context}
 
 Question: {question}
 
-Answer:"""
+Answer (strictly from context only):"""
 
     return PromptTemplate(
         template=template,
