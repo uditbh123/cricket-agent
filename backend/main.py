@@ -7,7 +7,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from agent import get_retriever, get_llm, get_prompt, format_docs, hybrid_retrieve, rewrite_query
+from agent import (
+    get_retriever, get_llm, get_prompt, get_vectorstore,
+    format_docs, hybrid_retrieve, ensure_knowledge
+)
 import json
 
 app = FastAPI()
@@ -28,26 +31,34 @@ def health():
 
 @app.post("/ask")
 def ask_question(request: QuestionRequest):
-    vector_retriever, bm25_retriever = get_retriever()
     llm = get_llm()
+    vectorstore = get_vectorstore()
     prompt = get_prompt()
 
     def stream_response():
         try:
-            # Step 1 — Rewrite query
-            rewritten = rewrite_query(request.question, llm)
-            print(f"Original : {request.question}")
-            print(f"Rewritten: {rewritten}")
+            print(f"\nQuestion: {request.question}")
 
-            # Step 2 — Hybrid retrieval
-            docs = hybrid_retrieve(rewritten, vector_retriever, bm25_retriever)
+            # Dynamically fetch Wikipedia knowledge for this question
+            # Works for any question — no hardcoding needed
+            ensure_knowledge(request.question, llm, vectorstore)
+
+            # Fresh retriever — includes any newly added docs
+            vector_retriever, bm25_retriever = get_retriever()
+
+            # Hybrid retrieval
+            docs = hybrid_retrieve(
+                request.question,
+                vector_retriever,
+                bm25_retriever
+            )
+
             sources = [doc.page_content for doc in docs]
             context = format_docs(docs)
 
-            # Send sources to frontend
             yield json.dumps({"type": "sources", "data": sources}) + "\n"
 
-            # Step 3 — Stream answer
+            # Stream the answer
             formatted_prompt = prompt.format(
                 context=context,
                 question=request.question
@@ -59,7 +70,11 @@ def ask_question(request: QuestionRequest):
             yield json.dumps({"type": "done"}) + "\n"
 
         except Exception as e:
-            yield json.dumps({"type": "token", "data": f"Error: {str(e)}"}) + "\n"
+            print(f"Error: {e}")
+            yield json.dumps({
+                "type": "token",
+                "data": f"Something went wrong: {str(e)}"
+            }) + "\n"
             yield json.dumps({"type": "done"}) + "\n"
 
     return StreamingResponse(stream_response(), media_type="text/plain")

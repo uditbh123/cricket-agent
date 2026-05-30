@@ -1,0 +1,161 @@
+import sys
+import os
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+import wikipedia
+import time
+import json
+from pathlib import Path
+from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+FETCHED_TOPICS_FILE = "./backend/fetched_topics.json"
+
+def load_fetched_topics() -> set:
+    if Path(FETCHED_TOPICS_FILE).exists():
+        with open(FETCHED_TOPICS_FILE, "r") as f:
+            return set(json.load(f))
+    return set()
+
+def save_fetched_topics(topics: set):
+    os.makedirs(os.path.dirname(FETCHED_TOPICS_FILE), exist_ok=True)
+    with open(FETCHED_TOPICS_FILE, "w") as f:
+        json.dump(list(topics), f, indent=2)
+
+def fetch_wikipedia_article(topic: str) -> Document | None:
+    try:
+        time.sleep(0.5)
+        results = wikipedia.search(topic, results=3)
+        if not results:
+            return None
+
+        for result in results:
+            try:
+                page = wikipedia.page(result, auto_suggest=False)
+                if len(page.content) > 500:
+                    return Document(
+                        page_content=page.content,
+                        metadata={
+                            "source": topic,
+                            "title": page.title,
+                            "url": page.url
+                        }
+                    )
+            except wikipedia.DisambiguationError as e:
+                try:
+                    page = wikipedia.page(e.options[0], auto_suggest=False)
+                    if len(page.content) > 500:
+                        return Document(
+                            page_content=page.content,
+                            metadata={
+                                "source": topic,
+                                "title": page.title,
+                                "url": page.url
+                            }
+                        )
+                except Exception:
+                    continue
+            except Exception:
+                continue
+        return None
+
+    except Exception as e:
+        print(f"Failed to fetch '{topic}': {e}")
+        return None
+
+def add_topics_to_db(topics: list, vectorstore) -> dict:
+    fetched_topics = load_fetched_topics()
+    new_topics = [t for t in topics if t.lower() not in fetched_topics]
+    skipped = [t for t in topics if t.lower() in fetched_topics]
+
+    if not new_topics:
+        return {"added": [], "skipped": skipped, "failed": []}
+
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1500,
+        chunk_overlap=200,
+        separators=["\n\n", "\n", ". ", " ", ""]
+    )
+
+    added = []
+    failed = []
+
+    for topic in new_topics:
+        doc = fetch_wikipedia_article(topic)
+        if doc:
+            chunks = splitter.split_documents([doc])
+            if chunks:
+                vectorstore.add_documents(chunks)
+                fetched_topics.add(topic.lower())
+                added.append(topic)
+                print(f"  ✓ {topic} — {len(chunks)} chunks added")
+            else:
+                failed.append(topic)
+        else:
+            failed.append(topic)
+            print(f"  ✗ Could not fetch: {topic}")
+
+    save_fetched_topics(fetched_topics)
+    return {"added": added, "skipped": skipped, "failed": failed}
+
+def extract_topics_from_question(question: str, llm) -> list:
+    """
+    Converts ANY kind of question into Wikipedia search topics.
+
+    Handles:
+    - Nicknames: "who is the little master" → ["Sachin Tendulkar"]
+    - Slang: "who is the GOAT of cricket" → ["greatest cricket player of all time"]
+    - Vague: "that guy who got 400 runs" → ["Brian Lara 400 Test cricket"]
+    - Silly: "can a bat fly in cricket" → ["cricket bat"]
+    - Specific: "2019 World Cup final" → ["2019 ICC Cricket World Cup Final"]
+    - Comparisons: "kohli vs tendulkar" → ["Virat Kohli", "Sachin Tendulkar"]
+    - Rules: "what happens if ball hits helmet" → ["Laws of cricket"]
+    - Records: "fastest century in T20" → ["T20 cricket records"]
+    """
+
+    prompt = f"""You are a Wikipedia search assistant for cricket questions.
+
+Your job: Convert the user's question into 1-3 Wikipedia article titles to search for.
+The question can be anything — nicknames, slang, vague, silly, or very specific.
+You must figure out what Wikipedia articles would help answer it.
+
+Rules:
+- Return ONLY a valid JSON array of strings
+- No explanations, no markdown, just the JSON array
+- Maximum 3 topics
+- Use proper Wikipedia-style titles (e.g. "Sachin Tendulkar" not "the little master")
+- If the question is about a rule, return ["Laws of cricket"] or the specific rule
+- If the question is about a tournament, return the full tournament name
+- If the question mentions a nickname or informal name, convert it to the real name
+
+Examples:
+"who is the little master" → ["Sachin Tendulkar"]
+"GOAT of batting" → ["Sachin Tendulkar", "Virat Kohli"]
+"that spinner with most wickets" → ["Muttiah Muralitharan", "Shane Warne"]
+"how does rain affect cricket" → ["Duckworth-Lewis-Stern method", "Laws of cricket"]
+"ipl teams" → ["Indian Premier League"]
+"why do players wear white in test" → ["Test cricket", "Cricket clothing and equipment"]
+"fastest bowler ever" → ["Shoaib Akhtar", "Brett Lee"]
+"can a batsman hit the ball twice" → ["Laws of cricket"]
+"2011 world cup winner" → ["2011 ICC Cricket World Cup"]
+"hitman of cricket" → ["Rohit Sharma"]
+"what is a googly" → ["Googly cricket"]
+
+Question: "{question}"
+JSON array:"""
+
+    try:
+        response = llm.invoke(prompt).strip()
+        # Strip markdown if model wraps in backticks
+        response = response.replace("```json", "").replace("```", "").strip()
+        # Extract just the JSON array
+        start = response.find("[")
+        end = response.rfind("]") + 1
+        if start != -1 and end > start:
+            topics = json.loads(response[start:end])
+            return [t for t in topics if isinstance(t, str)][:3]
+    except Exception as e:
+        print(f"Topic extraction failed: {e}")
+
+    return []
