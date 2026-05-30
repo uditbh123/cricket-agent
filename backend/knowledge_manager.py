@@ -23,45 +23,85 @@ def save_fetched_topics(topics: set):
     with open(FETCHED_TOPICS_FILE, "w") as f:
         json.dump(list(topics), f, indent=2)
 
+import requests
+
 def fetch_wikipedia_article(topic: str) -> Document | None:
     try:
-        time.sleep(0.5)
-        results = wikipedia.search(topic, results=3)
+        time.sleep(1)
+
+        # Use Wikipedia's REST API directly — more reliable than the library
+        search_url = "https://en.wikipedia.org/w/api.php"
+        search_params = {
+            "action": "query",
+            "list": "search",
+            "srsearch": topic,
+            "format": "json",
+            "srlimit": 3,
+            "srprop": "snippet"
+        }
+
+        headers = {
+            "User-Agent": "cricket-agent/1.0 (educational project; contact@example.com)"
+        }
+
+        search_response = requests.get(
+            search_url,
+            params=search_params,
+            headers=headers,
+            timeout=10
+        )
+        search_data = search_response.json()
+
+        results = search_data.get("query", {}).get("search", [])
         if not results:
+            print(f"  No results found for: {topic}")
             return None
 
+        # Try each result
         for result in results:
+            page_title = result["title"]
             try:
-                page = wikipedia.page(result, auto_suggest=False)
-                if len(page.content) > 500:
-                    return Document(
-                        page_content=page.content,
-                        metadata={
-                            "source": topic,
-                            "title": page.title,
-                            "url": page.url
-                        }
-                    )
-            except wikipedia.DisambiguationError as e:
-                try:
-                    page = wikipedia.page(e.options[0], auto_suggest=False)
-                    if len(page.content) > 500:
+                # Fetch the full page content
+                content_params = {
+                    "action": "query",
+                    "titles": page_title,
+                    "prop": "extracts",
+                    "explaintext": True,
+                    "format": "json",
+                    "exsectionformat": "plain"
+                }
+
+                content_response = requests.get(
+                    search_url,
+                    params=content_params,
+                    headers=headers,
+                    timeout=15
+                )
+                content_data = content_response.json()
+
+                pages = content_data.get("query", {}).get("pages", {})
+                for page_id, page in pages.items():
+                    if page_id == "-1":
+                        continue
+                    content = page.get("extract", "")
+                    if len(content) > 500:
+                        url = f"https://en.wikipedia.org/wiki/{page_title.replace(' ', '_')}"
+                        print(f"  Matched '{topic}' → '{page_title}'")
                         return Document(
-                            page_content=page.content,
+                            page_content=content,
                             metadata={
                                 "source": topic,
-                                "title": page.title,
-                                "url": page.url
+                                "title": page_title,
+                                "url": url
                             }
                         )
-                except Exception:
-                    continue
-            except Exception:
+            except Exception as e:
                 continue
+
         return None
 
     except Exception as e:
-        print(f"Failed to fetch '{topic}': {e}")
+        print(f"  Failed to fetch '{topic}': {e}")
         return None
 
 def add_topics_to_db(topics: list, vectorstore) -> dict:
