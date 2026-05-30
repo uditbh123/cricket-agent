@@ -7,104 +7,99 @@ from langchain_ollama import OllamaLLM
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.prompts import PromptTemplate
-from langchain_community.retrievers import BM25Retriever
-from langchain.retrievers import EnsembleRetriever
 from langchain_core.documents import Document
+from langchain_community.retrievers import BM25Retriever
+from knowledge_manager import extract_topics_from_question, add_topics_to_db
 
-# ── Embeddings ──────────────────────────────────────────────
 def get_embeddings():
     return HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 
-# ── Load all docs from ChromaDB for BM25 ────────────────────
-def load_all_docs():
-    embeddings = get_embeddings()
-    vectorstore = Chroma(
+def get_vectorstore():
+    return Chroma(
         persist_directory="./backend/cricket_db",
-        embedding_function=embeddings
+        embedding_function=get_embeddings()
     )
-    # Pull every stored chunk out of ChromaDB
+
+def get_retriever():
+    vectorstore = get_vectorstore()
     raw = vectorstore.get()
-    docs = [
+
+    all_docs = [
         Document(page_content=text)
         for text in raw["documents"]
+        if text and len(text.strip()) > 10
     ]
-    return docs, vectorstore
 
-# ── Hybrid Retriever (Vector + BM25) ────────────────────────
-def get_retriever():
-    docs, vectorstore = load_all_docs()
-
-    # Vector retriever — finds semantically similar chunks
     vector_retriever = vectorstore.as_retriever(
-        search_kwargs={"k": 8}
+        search_kwargs={"k": 10}
     )
 
-    # BM25 retriever — finds exact keyword matches
-    bm25_retriever = BM25Retriever.from_documents(docs)
-    bm25_retriever.k = 8
+    bm25_retriever = BM25Retriever.from_documents(all_docs)
+    bm25_retriever.k = 10
 
-    # Ensemble combines both — 50% vector, 50% keyword
-    hybrid_retriever = EnsembleRetriever(
-        retrievers=[vector_retriever, bm25_retriever],
-        weights=[0.5, 0.5]
-    )
+    return vector_retriever, bm25_retriever
 
-    return hybrid_retriever
-
-# ── LLM ─────────────────────────────────────────────────────
 def get_llm():
-    return OllamaLLM(
-        model="llama3.2:1b",
-        temperature=0.1  # lower = more focused, less random
-    )
+    return OllamaLLM(model="llama3.2:1b", temperature=0.1)
 
-# ── Prompt ──────────────────────────────────────────────────
 def get_prompt():
-    prompt_template = """You are a cricket expert assistant with deep knowledge of the game.
+    template = """You are a cricket expert assistant with access to Wikipedia knowledge.
 
-Use ONLY the following context from Wikipedia to answer the question.
-Be specific, accurate, and cite specific facts from the context.
-If the context does not contain enough information, say exactly:
-"I don't have enough information about that in my cricket knowledge base."
-Do NOT make up statistics, names, or dates.
+Your job:
+- Answer any cricket-related question using the context provided
+- If the question uses a nickname, slang, or informal phrasing, figure out who or what they mean from the context
+- Be specific — use real names, dates, and numbers from the context
+- If the context genuinely doesn't have the answer, say so honestly
 
 Context:
 {context}
 
 Question: {question}
 
-Answer (be specific and use facts from the context):"""
+Answer:"""
 
     return PromptTemplate(
-        template=prompt_template,
+        template=template,
         input_variables=["context", "question"]
     )
 
-# ── Format docs ─────────────────────────────────────────────
 def format_docs(docs):
-    # Deduplicate chunks (hybrid search can return duplicates)
     seen = set()
-    unique_docs = []
+    unique = []
     for doc in docs:
+        content = doc.page_content.strip()
+        if content not in seen and content:
+            seen.add(content)
+            unique.append(content)
+    return "\n\n---\n\n".join(unique)
+
+def hybrid_retrieve(question: str, vector_retriever, bm25_retriever):
+    vector_docs = vector_retriever.invoke(question)
+    bm25_docs = bm25_retriever.invoke(question)
+
+    seen = set()
+    combined = []
+    for doc in vector_docs + bm25_docs:
         content = doc.page_content.strip()
         if content not in seen:
             seen.add(content)
-            unique_docs.append(content)
+            combined.append(doc)
 
-    return "\n\n---\n\n".join(unique_docs)
+    return combined[:12]
 
-def rewrite_query(question: str, llm) -> str:
-    rewrite_prompt = f"""You are a cricket search assistant. 
-Rewrite this question into a better search query for finding 
-relevant cricket information. Include key cricket terms, 
-player names, and concepts. Return ONLY the rewritten query, 
-nothing else.
-
-Original question: {question}
-Rewritten search query:"""
-    
-    rewritten = llm.invoke(rewrite_prompt).strip()
-    # Safety check — if rewrite is too long or weird, use original
-    if len(rewritten) > 200 or len(rewritten) < 5:
-        return question
-    return rewritten
+def ensure_knowledge(question: str, llm, vectorstore):
+    """
+    Extract topics from the question and fetch their
+    Wikipedia articles if not already in the database.
+    Works for any question — nicknames, slang, vague phrasing,
+    anything. The LLM figures out what to search for.
+    """
+    topics = extract_topics_from_question(question, llm)
+    if topics:
+        print(f"Topics to fetch: {topics}")
+        result = add_topics_to_db(topics, vectorstore)
+        if result["added"]:
+            print(f"Newly added to DB: {result['added']}")
+        if result["skipped"]:
+            print(f"Already in DB: {result['skipped']}")
+    return topics
