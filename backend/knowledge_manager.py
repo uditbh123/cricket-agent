@@ -1,14 +1,13 @@
 import sys
 import os
-
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-import wikipedia
+import requests
 import time
 import json
 from pathlib import Path
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 FETCHED_TOPICS_FILE = "./backend/fetched_topics.json"
 
@@ -26,83 +25,99 @@ def save_fetched_topics(topics: set):
 import requests
 
 def fetch_wikipedia_article(topic: str) -> Document | None:
-    try:
-        time.sleep(1)
+    search_url = "https://en.wikipedia.org/w/api.php"
+    headers = {
+        "User-Agent": "cricket-agent/1.0 (educational project; contact@example.com)"
+    }
 
-        # Use Wikipedia's REST API directly — more reliable than the library
-        search_url = "https://en.wikipedia.org/w/api.php"
-        search_params = {
-            "action": "query",
-            "list": "search",
-            "srsearch": topic,
-            "format": "json",
-            "srlimit": 3,
-            "srprop": "snippet"
-        }
+    # Retry up to 3 times with increasing delay
+    for attempt in range(3):
+        try:
+            wait_time = 2 + (attempt * 3)  # 2s, 5s, 8s
+            time.sleep(wait_time)
 
-        headers = {
-            "User-Agent": "cricket-agent/1.0 (educational project; contact@example.com)"
-        }
+            search_params = {
+                "action": "query",
+                "list": "search",
+                "srsearch": topic,
+                "format": "json",
+                "srlimit": 3,
+                "srprop": "snippet"
+            }
 
-        search_response = requests.get(
-            search_url,
-            params=search_params,
-            headers=headers,
-            timeout=10
-        )
-        search_data = search_response.json()
+            search_response = requests.get(
+                search_url,
+                params=search_params,
+                headers=headers,
+                timeout=15
+            )
 
-        results = search_data.get("query", {}).get("search", [])
-        if not results:
-            print(f"  No results found for: {topic}")
-            return None
-
-        # Try each result
-        for result in results:
-            page_title = result["title"]
-            try:
-                # Fetch the full page content
-                content_params = {
-                    "action": "query",
-                    "titles": page_title,
-                    "prop": "extracts",
-                    "explaintext": True,
-                    "format": "json",
-                    "exsectionformat": "plain"
-                }
-
-                content_response = requests.get(
-                    search_url,
-                    params=content_params,
-                    headers=headers,
-                    timeout=15
-                )
-                content_data = content_response.json()
-
-                pages = content_data.get("query", {}).get("pages", {})
-                for page_id, page in pages.items():
-                    if page_id == "-1":
-                        continue
-                    content = page.get("extract", "")
-                    if len(content) > 500:
-                        url = f"https://en.wikipedia.org/wiki/{page_title.replace(' ', '_')}"
-                        print(f"  Matched '{topic}' → '{page_title}'")
-                        return Document(
-                            page_content=content,
-                            metadata={
-                                "source": topic,
-                                "title": page_title,
-                                "url": url
-                            }
-                        )
-            except Exception as e:
+            # Check if response is valid
+            if search_response.status_code != 200:
+                print(f"  HTTP {search_response.status_code} for '{topic}', retrying...")
                 continue
 
-        return None
+            if not search_response.text.strip():
+                print(f"  Empty response for '{topic}', retrying...")
+                continue
 
-    except Exception as e:
-        print(f"  Failed to fetch '{topic}': {e}")
-        return None
+            search_data = search_response.json()
+            results = search_data.get("query", {}).get("search", [])
+
+            if not results:
+                print(f"  No results for: {topic}")
+                return None
+
+            for result in results:
+                page_title = result["title"]
+                try:
+                    time.sleep(1)
+                    content_params = {
+                        "action": "query",
+                        "titles": page_title,
+                        "prop": "extracts",
+                        "explaintext": True,
+                        "format": "json",
+                        "exsectionformat": "plain"
+                    }
+
+                    content_response = requests.get(
+                        search_url,
+                        params=content_params,
+                        headers=headers,
+                        timeout=15
+                    )
+
+                    if not content_response.text.strip():
+                        continue
+
+                    content_data = content_response.json()
+                    pages = content_data.get("query", {}).get("pages", {})
+
+                    for page_id, page in pages.items():
+                        if page_id == "-1":
+                            continue
+                        content = page.get("extract", "")
+                        if len(content) > 500:
+                            url = f"https://en.wikipedia.org/wiki/{page_title.replace(' ', '_')}"
+                            print(f"  Matched '{topic}' → '{page_title}'")
+                            return Document(
+                                page_content=content,
+                                metadata={
+                                    "source": topic,
+                                    "title": page_title,
+                                    "url": url
+                                }
+                            )
+                except Exception:
+                    continue
+
+        except Exception as e:
+            print(f"  Attempt {attempt + 1} failed for '{topic}': {e}")
+            continue
+
+    print(f"  ✗ All retries failed for: {topic}")
+    return None
 
 def add_topics_to_db(topics: list, vectorstore) -> dict:
     fetched_topics = load_fetched_topics()
