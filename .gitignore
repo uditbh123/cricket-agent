@@ -8,13 +8,20 @@ __pycache__/
 *.egg-info/
 .eggs/
 
-# Vector database — this is large and rebuilds with ingest.py
+# Vector database — rebuilds with ingest.py
 backend/cricket_db/
+cricket_db/
+
+# Knowledge base tracking files — local only
+backend/fetched_topics.json
+backend/discovered_articles.json
+fetched_topics.json
+discovered_articles.json
 
 # HuggingFace model cache
 .cache/
 
-# Environment variables (if you ever add API keys later)
+# Environment variables
 .env
 .env.local
 .env.*.local
