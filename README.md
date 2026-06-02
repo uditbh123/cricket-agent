@@ -1,103 +1,123 @@
-# Cricket AI Agent
+# 🏏 Cricket AI Agent
 
-A full-stack AI-powered Q&A agent that answers questions about cricket using Wikipedia as its knowledge base. Built with a RAG (Retrieval-Augmented Generation) pipeline, a local LLM running on your own machine, and a React frontend no API keys, no cloud costs, completely free to run.
-
----
-
-## What It Does
-
-You type a cricket question "How does the Duckworth-Lewis method work?" or "Who holds the record for most Test centuries?" and the agent finds the most relevant information from a pre-indexed set of Wikipedia articles and generates a grounded, accurate answer using a locally running AI model.
-
-It doesn't guess. It retrieves first, then answers. That's what makes it reliable.
+A full-stack AI-powered cricket Q&A system built with RAG (Retrieval-Augmented Generation). Ask anything about cricket — rules, players, tournaments, records, history — and get grounded answers sourced directly from Wikipedia. Runs entirely free on your local machine with no API keys or cloud costs.
 
 ---
 
-## How It Works (The Architecture)
+## What Makes This Different
+
+Most AI chatbots answer from training data and hallucinate when they don't know something. This agent retrieves real Wikipedia content first, then generates answers from that content — so every answer is traceable to a source.
+
+The knowledge base is self-maintaining. It crawls Wikipedia's own cricket category system to discover articles automatically, builds the database incrementally (never wiping existing data), and grows permanently with every run. You never manually list topics.
+
+---
+
+## How It Works
 
 ```
 User asks a question
         ↓
-React frontend sends POST request to FastAPI backend
+LLM extracts Wikipedia search topics from the question
+(handles nicknames, slang, vague phrasing — anything)
         ↓
-Question is converted into an embedding (a vector of numbers representing its meaning)
+knowledge_manager checks if those topics are already indexed
         ↓
-ChromaDB searches for the most semantically similar chunks from Wikipedia articles
+If new → fetches from Wikipedia API → chunks → embeds → stores in ChromaDB
+If already indexed → skips fetch entirely
         ↓
-Top 5 relevant chunks are passed to LLaMA 3.2 (running locally via Ollama) as context
+Hybrid retrieval: Vector search (semantic) + BM25 (keyword) combined
         ↓
-LLM reads the context and generates a grounded answer
+Top 12 deduplicated chunks sent to LLaMA 3.2 as context
         ↓
-Answer + source chunks are returned to the React frontend
+LLM generates a grounded answer strictly from the retrieved context
+        ↓
+Answer streams token by token to the React frontend
 ```
 
-This pattern is called **RAG (Retrieval-Augmented Generation)**. It's the most widely used architecture for building production AI assistants that need to answer questions from a specific knowledge base without hallucinating.
+---
+
+## Architecture
+
+```
+cricket-agent/
+│
+├── backend/
+│   ├── crawler.py           # Crawls Wikipedia category system to discover articles
+│   ├── ingest.py            # Incremental DB builder — never wipes existing data
+│   ├── knowledge_manager.py # Fetches Wikipedia articles, manages fetched_topics.json
+│   ├── agent.py             # Hybrid RAG pipeline (vector + BM25 retrieval)
+│   ├── main.py              # FastAPI server with streaming responses
+│   ├── cricket_db/          # ChromaDB vector database (gitignored)
+│   ├── fetched_topics.json  # Tracks indexed articles (gitignored)
+│   └── discovered_articles.json  # Crawler output — all discovered article titles
+│
+└── frontend/
+    └── src/
+        ├── App.jsx                  # Root component, streaming chat state
+        ├── App.css                  # Dark theme styles
+        └── components/
+            ├── ChatWindow.jsx       # Message history + suggestion prompts
+            ├── ChatMessage.jsx      # Message bubble with copy + sources toggle
+            └── ChatInput.jsx        # Textarea with character counter
+```
 
 ---
 
 ## Tech Stack
 
 ### Backend
-| Technology | What It Does |
+| Technology | Role |
 |---|---|
-| **Python** | Core language for all backend logic |
-| **FastAPI** | REST API framework exposes `/ask` and `/health` endpoints |
-| **LangChain** | Orchestrates the RAG pipeline (retrieval + prompt + LLM) |
-| **Ollama + LLaMA 3.2** | Local LLM runs entirely on your machine, no API key needed |
-| **ChromaDB** | Local vector database stores and searches Wikipedia embeddings |
-| **HuggingFace Sentence Transformers** | Converts text into embeddings (`all-MiniLM-L6-v2` model) |
-| **wikipedia-api** | Fetches Wikipedia article content programmatically |
+| Python | Core language |
+| FastAPI | REST API — `/ask` (streaming) and `/health` endpoints |
+| LangChain | RAG pipeline orchestration |
+| Ollama + LLaMA 3.2 1b | Local LLM — runs on your machine, zero cost |
+| ChromaDB | Local vector database for semantic search |
+| HuggingFace Sentence Transformers | Text embeddings (`all-MiniLM-L6-v2`) |
+| BM25 Retriever | Keyword-based retrieval to complement vector search |
+| Wikipedia REST API | Article fetching via `requests` (no library dependency) |
 
 ### Frontend
-| Technology | What It Does |
+| Technology | Role |
 |---|---|
-| **React + Vite** | Component-based UI with fast development build |
-| **Axios** | HTTP client for communicating with the FastAPI backend |
-| **Plain CSS** | Custom dark-mode chat interface |
+| React + Vite | Component-based UI |
+| Fetch API | Streaming HTTP responses from FastAPI |
+| Plain CSS | Custom dark theme chat interface |
 
 ---
 
-## Project Structure
+## Key Engineering Decisions
 
-```
-cricket-agent/
-│
-├── backend/
-│   ├── ingest.py        # Fetches Wikipedia articles, creates embeddings, builds ChromaDB
-│   ├── agent.py         # RAG pipeline — retriever + prompt + LLM chain
-│   └── main.py          # FastAPI server — exposes the API endpoints
-│
-├── frontend/
-│   └── src/
-│       ├── App.jsx              # Root component, manages chat state
-│       ├── App.css              # All styles
-│       └── components/
-│           ├── ChatWindow.jsx   # Renders message history + suggestion prompts
-│           ├── ChatMessage.jsx  # Individual message bubble with source toggle
-│           └── ChatInput.jsx    # Textarea + send button with keyboard shortcut
-│
-└── .gitignore
-```
+**Hybrid Search (Vector + BM25)**
+Pure vector search misses exact keyword matches. Pure keyword search misses semantic meaning. Combining both retrieves more relevant chunks — especially for cricket-specific terminology and player names.
+
+**Streaming Responses**
+The FastAPI backend streams LLM output token by token using `StreamingResponse`. The React frontend reads the stream incrementally, so words appear as they're generated instead of waiting for the full answer. This is the same pattern used by ChatGPT and Claude.
+
+**Incremental Knowledge Base**
+The database never gets deleted. `fetched_topics.json` tracks every indexed article. Running `ingest.py` again skips already-indexed articles and only fetches new ones. Failed fetches are automatically retried on the next run.
+
+**Category-Based Discovery**
+Instead of manually listing article titles, `crawler.py` crawls Wikipedia's cricket category system (`Category:Cricket`, `Category:Indian cricketers`, etc.) and discovers articles automatically. Adding a new category like `Category:Cricket governing bodies` pulls all articles in it with zero manual work.
+
+**Dynamic Knowledge Gaps**
+When a user asks about a topic not in the database, the agent extracts Wikipedia search topics from the question using the LLM, fetches those articles, and adds them to the database permanently. The knowledge base grows with usage.
 
 ---
 
-## Running It Locally
+## Running Locally
 
 ### Prerequisites
-
-- Python 3.10 or higher
-- Node.js 18 or higher
+- Python 3.10+
+- Node.js 18+
 - [Ollama](https://ollama.com) installed
 
-### 1. Clone the repo
+### 1. Clone and set up Python environment
 
 ```bash
 git clone https://github.com/uditbh123/cricket-agent.git
 cd cricket-agent
-```
 
-### 2. Set up the Python environment
-
-```bash
 python -m venv venv
 
 # Windows
@@ -107,39 +127,49 @@ venv\Scripts\activate
 source venv/bin/activate
 ```
 
-### 3. Install Python dependencies
+### 2. Install Python dependencies
 
 ```bash
-venv\Scripts\pip.exe install langchain langchain-community langchain-ollama langchain-huggingface langchain-chroma langchain-text-splitters chromadb sentence-transformers wikipedia fastapi uvicorn python-multipart
+pip install langchain langchain-community langchain-ollama langchain-huggingface langchain-chroma langchain-text-splitters chromadb sentence-transformers fastapi uvicorn python-multipart requests
 ```
 
-### 4. Pull the LLM
+### 3. Pull the local LLM
 
 ```bash
-ollama pull llama3.2
+ollama pull llama3.2:1b
 ```
 
-This downloads LLaMA 3.2 (~2GB) to your machine. Only needed once.
+Downloads LLaMA 3.2 1b (~700MB) to your machine. Only needed once.
+
+### 4. Discover cricket articles from Wikipedia
+
+```bash
+python backend/crawler.py
+```
+
+Crawls Wikipedia's cricket category system and saves discovered article titles to `backend/discovered_articles.json`. No rate limits hit — only fetches category listings, not full articles.
 
 ### 5. Build the knowledge base
 
 ```bash
-venv\Scripts\python.exe backend\ingest.py
+python backend/ingest.py
 ```
 
-This fetches ~13 Wikipedia articles about cricket, splits them into chunks, embeds them, and saves everything into a local ChromaDB database at `backend/cricket_db/`. Takes 2–5 minutes on first run.
+Fetches full Wikipedia articles for discovered topics, chunks them, embeds them, and stores in ChromaDB. Safe to run multiple times — already-indexed articles are skipped automatically.
 
 ### 6. Start the backend
 
 ```bash
+# Windows
 venv\Scripts\python.exe -m uvicorn backend.main:app --reload --port 8000
+
+# Mac/Linux
+uvicorn backend.main:app --reload --port 8000
 ```
 
-API is now live at `http://localhost:8000`. Visit `http://localhost:8000/docs` to see the auto-generated API documentation and test it interactively.
+Visit `http://localhost:8000/docs` for interactive API documentation.
 
 ### 7. Start the frontend
-
-Open a second terminal:
 
 ```bash
 cd frontend
@@ -147,85 +177,93 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173` in your browser.
+Open `http://localhost:5173`.
+
+---
+
+## Expanding the Knowledge Base
+
+### Add a new Wikipedia category
+
+Open `backend/crawler.py` and add to `CRICKET_CATEGORIES`:
+
+```python
+CRICKET_CATEGORIES = [
+    "Cricket",
+    "Indian cricketers",
+    "Cricket governing bodies",   # ← add this
+    "Cricket stadiums",           # ← and this
+]
+```
+
+Then run:
+```bash
+python backend/crawler.py
+python backend/ingest.py
+```
+
+The crawler discovers all articles in the new categories. Ingest fetches only the ones not already in the database. Your existing data is never touched.
+
+### The database never needs to be deleted
+
+Running `ingest.py` is always safe. It checks `fetched_topics.json` before every fetch and skips anything already indexed.
 
 ---
 
 ## API Reference
 
 ### `GET /health`
-Returns server status.
-
 ```json
 { "status": "running" }
 ```
 
 ### `POST /ask`
-Accepts a cricket question, returns an AI-generated answer with source chunks.
+Streams the response as newline-delimited JSON.
 
 **Request:**
 ```json
-{ "question": "How many Test centuries has Sachin Tendulkar scored?" }
+{ "question": "Who took the most Test wickets ever?" }
 ```
 
-**Response:**
+**Stream events:**
 ```json
-{
-  "answer": "Sachin Tendulkar scored 51 centuries in Test cricket...",
-  "sources": [
-    "Tendulkar holds the record for the most centuries in international cricket...",
-    "..."
-  ]
-}
+{ "type": "sources", "data": ["chunk text...", "..."] }
+{ "type": "token", "data": "Muttiah" }
+{ "type": "token", "data": " Muralitharan" }
+{ "type": "done" }
 ```
-
----
-
-## Knowledge Base
-
-The agent currently knows about these Wikipedia topics:
-
-- Cricket (overview)
-- Test cricket
-- One Day International (ODI)
-- Twenty20
-- Indian Premier League (IPL)
-- Laws of Cricket
-- Sachin Tendulkar
-- Virat Kohli
-- Brian Lara
-- Shane Warne
-- ICC Cricket World Cup
-- The Ashes
-- Duckworth–Lewis–Stern method
-
-To add more topics, open `backend/ingest.py`, add article titles to the `topics` list, and re-run the script.
 
 ---
 
 ## What I Learned Building This
 
-- **RAG architecture** — how to build a retrieval pipeline that grounds LLM responses in real documents instead of letting it hallucinate
-- **Vector embeddings** — how text gets converted into numerical representations that capture semantic meaning, enabling similarity search
-- **FastAPI** — building a REST API in Python, handling CORS, defining request/response schemas with Pydantic
-- **React fundamentals** — component structure, `useState`, `useEffect`, `useRef`, controlled inputs, and async data fetching
-- **Full-stack integration** — making a React frontend communicate with a Python backend via HTTP
-- **LangChain LCEL** — the modern pipe-based chain syntax for composing LLM pipelines
-- **Local AI** — running a full LLM on a personal laptop with zero cloud dependency using Ollama
+**RAG architecture** — how to build a retrieval pipeline that grounds LLM responses in real documents and prevents hallucination by forcing the model to answer only from retrieved context.
+
+**Hybrid search** — why combining vector similarity search with BM25 keyword search produces significantly better retrieval than either alone, especially for domain-specific terminology.
+
+**Streaming with FastAPI + React** — how to stream LLM output from a Python backend to a React frontend using `StreamingResponse` and the browser's `ReadableStream` API.
+
+**Incremental database design** — how to build a knowledge base that grows safely over time without ever needing to be wiped and rebuilt from scratch.
+
+**Wikipedia as a data source** — how to use Wikipedia's REST API and category system programmatically to build a self-maintaining, domain-specific knowledge base without hardcoding topics.
+
+**LangChain LCEL** — the modern pipe-based chain syntax for composing LLM pipelines compared to the older chain classes.
+
+**Full-stack integration** — connecting a React frontend to a Python backend, handling CORS, async streaming, and state management for a real-time chat interface.
 
 ---
 
-## What's Next
+## Roadmap
 
+- [ ] Deploy backend to Render, frontend to Vercel
 - [ ] Add conversation memory so the agent remembers context within a session
-- [ ] Expand the knowledge base with more players, tournaments, and historical matches
-- [ ] Stream the LLM response token by token instead of waiting for the full answer
-- [ ] Deploy backend to Railway or Render, frontend to Vercel
+- [ ] Scheduled crawler runs to keep the knowledge base fresh automatically
+- [ ] Switch to a larger LLM when deploying to cloud for more accurate answers
 
 ---
 
 ## Author
 
-**Udit** — ICT & Robotics student.
+**Udit** — ICT & Robotics student building real AI engineering projects from scratch.
 
 [GitHub](https://github.com/uditbh123)
