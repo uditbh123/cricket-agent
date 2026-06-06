@@ -201,15 +201,26 @@ Question: "{question}"
 JSON array:"""
 
     try:
-        response = llm.invoke(prompt).strip()
-        # Strip markdown if model wraps in backticks
+        # Invoke the LLM with the prompt
+        raw = llm.invoke(prompt)
+
+        # Groq returns an AIMessage object, Ollama returns a plain string
+        # We handle both cases here
+        response = raw.content if hasattr(raw, "content") else str(raw)
+
+        # Strip markdown code blocks if the model wraps response in backticks
         response = response.replace("```json", "").replace("```", "").strip()
-        # Extract just the JSON array
+
+        # Extract just the JSON array from the response
+        # The model might add extra text before or after the array
         start = response.find("[")
         end = response.rfind("]") + 1
+
         if start != -1 and end > start:
             topics = json.loads(response[start:end])
+            # Filter to strings only and limit to 3 topics
             return [t for t in topics if isinstance(t, str)][:3]
+
     except Exception as e:
         print(f"Topic extraction failed: {e}")
 

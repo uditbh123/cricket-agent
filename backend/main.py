@@ -7,10 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from agent import (
-    get_retriever, get_llm, get_prompt, get_vectorstore,
-    format_docs, hybrid_retrieve, ensure_knowledge
-)
+from agent import get_llm, get_prompt, hybrid_retrieve, ensure_knowledge, format_docs
 import json
 
 app = FastAPI()
@@ -32,40 +29,29 @@ def health():
 @app.post("/ask")
 def ask_question(request: QuestionRequest):
     llm = get_llm()
-    vectorstore = get_vectorstore()
     prompt = get_prompt()
 
     def stream_response():
         try:
             print(f"\nQuestion: {request.question}")
 
-            # Dynamically fetch Wikipedia knowledge for this question
-            # Works for any question — no hardcoding needed
-            ensure_knowledge(request.question, llm, vectorstore)
+            ensure_knowledge(request.question)
 
-            # Fresh retriever — includes any newly added docs
-            vector_retriever, bm25_retriever = get_retriever()
-
-            # Hybrid retrieval
-            docs = hybrid_retrieve(
-                request.question,
-                vector_retriever,
-                bm25_retriever
-            )
-
+            docs = hybrid_retrieve(request.question)
             sources = [doc.page_content for doc in docs]
             context = format_docs(docs)
 
             yield json.dumps({"type": "sources", "data": sources}) + "\n"
 
-            # Stream the answer
             formatted_prompt = prompt.format(
                 context=context,
                 question=request.question
             )
 
             for chunk in llm.stream(formatted_prompt):
-                yield json.dumps({"type": "token", "data": chunk}) + "\n"
+                # Groq returns AIMessageChunk — extract text content
+                token = chunk.content if hasattr(chunk, "content") else str(chunk)
+                yield json.dumps({"type": "token", "data": token}) + "\n"
 
             yield json.dumps({"type": "done"}) + "\n"
 
