@@ -37,3 +37,6 @@ Thumbs.db
 
 # VS Code
 .vscode/
+
+# API Keys 
+backend/.env
