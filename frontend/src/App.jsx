@@ -1,125 +1,90 @@
-import { useState } from "react"
-import ChatWindow from "./components/ChatWindow"
-import ChatInput from "./components/ChatInput"
+const sendMessage = async (question) => {
+    const userMessage = { role: "user", content: question }
 
-const API_URL = "http://localhost:8000"
+    // Capture current messages before state update
+    const currentMessages = messages
 
-function App() {
-  const [messages, setMessages] = useState([])
-  const [isLoading, setIsLoading] = useState(false)
-
-  const sendMessage = async (question) => {
-    // Add user message
-    setMessages(prev => [...prev, { role: "user", content: question }])
+    setMessages(prev => [...prev, userMessage])
     setIsLoading(true)
 
-    // Add an empty assistant message that we'll stream into
-    const assistantIndex = messages.length + 1
+    const assistantIndex = currentMessages.length + 1
+
     setMessages(prev => [...prev, {
-      role: "assistant",
-      content: "",
-      sources: [],
-      isStreaming: true,
+        role: "assistant",
+        content: "",
+        sources: [],
+        isStreaming: true,
     }])
 
     try {
-      const response = await fetch(`${API_URL}/ask`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question }),
-      })
+        const response = await fetch(`${API_URL}/ask`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                question,
+                // Send last 6 messages so backend has conversation context
+                // Filter out isStreaming/isError flags — backend only needs role + content
+                history: currentMessages.slice(-6).map(m => ({
+                    role: m.role,
+                    content: m.content
+                }))
+            }),
+        })
 
-      if (!response.ok) throw new Error("Server error")
+        if (!response.ok) throw new Error("Server error")
 
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ""
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ""
 
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
+        while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
 
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split("\n")
-        buffer = lines.pop() // keep incomplete line in buffer
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split("\n")
+            buffer = lines.pop()
 
-        for (const line of lines) {
-          if (!line.trim()) continue
-          try {
-            const parsed = JSON.parse(line)
+            for (const line of lines) {
+                if (!line.trim()) continue
+                try {
+                    const parsed = JSON.parse(line)
 
-            if (parsed.type === "sources") {
-              // Update sources on the assistant message
-              setMessages(prev => prev.map((msg, i) =>
-                i === assistantIndex
-                  ? { ...msg, sources: parsed.data }
-                  : msg
-              ))
-            } else if (parsed.type === "token") {
-              // Append each token to the message content
-              setMessages(prev => prev.map((msg, i) =>
-                i === assistantIndex
-                  ? { ...msg, content: msg.content + parsed.data }
-                  : msg
-              ))
-            } else if (parsed.type === "done") {
-              // Mark streaming as complete
-              setMessages(prev => prev.map((msg, i) =>
-                i === assistantIndex
-                  ? { ...msg, isStreaming: false }
-                  : msg
-              ))
+                    if (parsed.type === "sources") {
+                        setMessages(prev => prev.map((msg, i) =>
+                            i === assistantIndex
+                                ? { ...msg, sources: parsed.data }
+                                : msg
+                        ))
+                    } else if (parsed.type === "token") {
+                        setMessages(prev => prev.map((msg, i) =>
+                            i === assistantIndex
+                                ? { ...msg, content: msg.content + parsed.data }
+                                : msg
+                        ))
+                    } else if (parsed.type === "done") {
+                        setMessages(prev => prev.map((msg, i) =>
+                            i === assistantIndex
+                                ? { ...msg, isStreaming: false }
+                                : msg
+                        ))
+                    }
+                } catch { }
             }
-          } catch {
-            // Skip malformed lines
-          }
         }
-      }
+
     } catch (error) {
-      setMessages(prev => prev.map((msg, i) =>
-        i === assistantIndex
-          ? {
-              ...msg,
-              content: "Could not reach the backend. Make sure the FastAPI server is running on port 8000.",
-              isError: true,
-              isStreaming: false,
-            }
-          : msg
-      ))
+        setMessages(prev => prev.map((msg, i) =>
+            i === assistantIndex
+                ? {
+                    ...msg,
+                    content: "Could not reach the backend. Make sure FastAPI is running on port 8000.",
+                    isError: true,
+                    isStreaming: false,
+                }
+                : msg
+        ))
     } finally {
-      setIsLoading(false)
+        setIsLoading(false)
     }
-  }
-
-  const clearChat = () => setMessages([])
-
-  return (
-    <div className="app">
-      <div className="header">
-        <div className="header-icon">🏏</div>
-        <div className="header-text">
-          <h1>Cricket Agent</h1>
-          <p>LLaMA 3.2 · Wikipedia RAG · Runs locally</p>
-        </div>
-        <div className="header-actions">
-          {messages.length > 0 && (
-            <button className="clear-btn" onClick={clearChat}>
-              Clear chat
-            </button>
-          )}
-          <div className="status-dot" title="Backend running" />
-        </div>
-      </div>
-
-      <ChatWindow
-        messages={messages}
-        isLoading={isLoading}
-        onSuggestion={sendMessage}
-      />
-
-      <ChatInput onSend={sendMessage} isLoading={isLoading} />
-    </div>
-  )
 }
-
-export default App
