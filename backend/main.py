@@ -71,33 +71,18 @@ def ask_question(request: QuestionRequest):
             prompt_text = f"""You are a cricket expert assistant with Wikipedia knowledge.
 
 Instructions:
-- Use the conversation history to understand context and references
-- If the user says "this league", "him", "she", "they" etc. refer to the conversation history to understand who or what they mean
+- Use the conversation history to understand context and references like "this league", "him", "they", "it", "the first season" etc.
+- Resolve all pronouns and references using the conversation history before answering
 - Answer using the Wikipedia context provided
-- Be specific with names, dates, and numbers
-- If the answer is not in the context, say so honestly
-- Do not invent facts
+- Be specific with names, dates, and numbers from the context
+- Do not invent facts not present in the context
+
+Previous conversation:
 {history_text}
+
 Wikipedia Context:
 {context}
 
 Current Question: {request.question}
 
 Answer:"""
-
-            # Stream answer token by token
-            for chunk in llm.stream(prompt_text):
-                token = chunk.content if hasattr(chunk, "content") else str(chunk)
-                yield json.dumps({"type": "token", "data": token}) + "\n"
-
-            yield json.dumps({"type": "done"}) + "\n"
-
-        except Exception as e:
-            print(f"Error: {e}")
-            yield json.dumps({
-                "type": "token",
-                "data": f"Something went wrong: {str(e)}"
-            }) + "\n"
-            yield json.dumps({"type": "done"}) + "\n"
-
-    return StreamingResponse(stream_response(), media_type="text/plain")

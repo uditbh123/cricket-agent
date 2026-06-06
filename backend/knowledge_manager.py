@@ -154,73 +154,51 @@ def add_topics_to_db(topics: list, vectorstore) -> dict:
     save_fetched_topics(fetched_topics)
     return {"added": added, "skipped": skipped, "failed": failed}
 
-def extract_topics_from_question(question: str, llm) -> list:
-    """
-    Converts ANY kind of question into Wikipedia search topics.
+def extract_topics_from_question(question: str, llm, history_text: str = "") -> list:
+    
+    # Include recent conversation so follow-up questions resolve correctly
+    history_section = ""
+    if history_text:
+        history_section = f"""
+Recent conversation:
+{history_text}
 
-    Handles:
-    - Nicknames: "who is the little master" → ["Sachin Tendulkar"]
-    - Slang: "who is the GOAT of cricket" → ["greatest cricket player of all time"]
-    - Vague: "that guy who got 400 runs" → ["Brian Lara 400 Test cricket"]
-    - Silly: "can a bat fly in cricket" → ["cricket bat"]
-    - Specific: "2019 World Cup final" → ["2019 ICC Cricket World Cup Final"]
-    - Comparisons: "kohli vs tendulkar" → ["Virat Kohli", "Sachin Tendulkar"]
-    - Rules: "what happens if ball hits helmet" → ["Laws of cricket"]
-    - Records: "fastest century in T20" → ["T20 cricket records"]
-    """
+Use the conversation above to understand what topic the user is referring to.
+For example if they said "Nepal Premier League" earlier and now ask 
+"who won the first season?" — search for "Nepal Premier League" not IPL.
+"""
 
     prompt = f"""You are a Wikipedia search assistant for cricket questions.
 
 Your job: Convert the user's question into 1-3 Wikipedia article titles to search for.
-The question can be anything — nicknames, slang, vague, silly, or very specific.
-You must figure out what Wikipedia articles would help answer it.
-
+{history_section}
 Rules:
 - Return ONLY a valid JSON array of strings
 - No explanations, no markdown, just the JSON array
 - Maximum 3 topics
-- Use proper Wikipedia-style titles (e.g. "Sachin Tendulkar" not "the little master")
-- If the question is about a rule, return ["Laws of cricket"] or the specific rule
-- If the question is about a tournament, return the full tournament name
-- If the question mentions a nickname or informal name, convert it to the real name
+- Use proper Wikipedia-style titles
+- If the question refers to something mentioned in the conversation history, use that
 
 Examples:
 "who is the little master" → ["Sachin Tendulkar"]
-"GOAT of batting" → ["Sachin Tendulkar", "Virat Kohli"]
-"that spinner with most wickets" → ["Muttiah Muralitharan", "Shane Warne"]
-"how does rain affect cricket" → ["Duckworth-Lewis-Stern method", "Laws of cricket"]
-"ipl teams" → ["Indian Premier League"]
-"why do players wear white in test" → ["Test cricket", "Cricket clothing and equipment"]
-"fastest bowler ever" → ["Shoaib Akhtar", "Brett Lee"]
-"can a batsman hit the ball twice" → ["Laws of cricket"]
-"2011 world cup winner" → ["2011 ICC Cricket World Cup"]
-"hitman of cricket" → ["Rohit Sharma"]
+"who won the first season?" (after discussing Nepal Premier League) → ["Nepal Premier League"]
+"how many teams are in it?" (after discussing IPL) → ["Indian Premier League"]
 "what is a googly" → ["Googly cricket"]
+"fastest bowler ever" → ["Shoaib Akhtar", "Brett Lee"]
 
 Question: "{question}"
 JSON array:"""
 
     try:
-        # Invoke the LLM with the prompt
         raw = llm.invoke(prompt)
-
-        # Groq returns an AIMessage object, Ollama returns a plain string
-        # We handle both cases here
         response = raw.content if hasattr(raw, "content") else str(raw)
-
-        # Strip markdown code blocks if the model wraps response in backticks
         response = response.replace("```json", "").replace("```", "").strip()
 
-        # Extract just the JSON array from the response
-        # The model might add extra text before or after the array
         start = response.find("[")
         end = response.rfind("]") + 1
-
         if start != -1 and end > start:
             topics = json.loads(response[start:end])
-            # Filter to strings only and limit to 3 topics
             return [t for t in topics if isinstance(t, str)][:3]
-
     except Exception as e:
         print(f"Topic extraction failed: {e}")
 
