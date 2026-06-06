@@ -109,10 +109,16 @@ def hybrid_retrieve(question: str):
 
     return combined[:12]
 
-def ensure_knowledge(question: str):
+def ensure_knowledge(question: str, history_text: str = ""):
+    """
+    Fetch Wikipedia knowledge for topics in the question.
+    Uses conversation history so follow-up questions like
+    'who won the first season?' resolve correctly to the
+    topic being discussed, not a random guess.
+    """
     global _bm25_retriever
 
-    topics = extract_topics_from_question(question, _llm)
+    topics = extract_topics_from_question(question, _llm, history_text)
     if not topics:
         return
 
@@ -121,8 +127,7 @@ def ensure_knowledge(question: str):
 
     if result["added"]:
         print(f"Newly added: {result['added']}")
-        # Rebuild BM25 only when new docs were added
-        _bm25_retriever = _build_bm25()
+        _refresh_bm25()
 
     if result["skipped"]:
         print(f"Already in DB: {result['skipped']}")

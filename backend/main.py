@@ -62,7 +62,10 @@ def ask_question(request: QuestionRequest):
                 for m in recent:
                     label = "User" if m.role == "user" else "Assistant"
                     lines.append(f"{label}: {m.content}")
-                history_text = "\nPrevious conversation:\n" + "\n".join(lines) + "\n"
+                history_text = "\n".join(lines)
+            # pass history to ensure_knowledge so it knows the context
+            ensure_knowledge(request.question, history_text)
+
 
             # Full prompt with memory
             prompt_text = f"""You are a cricket expert assistant with Wikipedia knowledge.
