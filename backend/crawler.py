@@ -32,6 +32,15 @@ CRICKET_CATEGORIES = [
     "Twenty20 International cricket",
     "Cricket grounds",
     "Cricket records",
+    "Nepali cricketers",
+    "Nepal Premier League seasons",
+    "Cricket governing bodies",        # ← ICC, BCCI, ECB etc
+    "Cricket stadiums",                # ← all major grounds
+    "Cricket World Cup tournaments",   # ← every World Cup
+    "Women cricketers",                # ← women's cricket
+    "Cricket umpires",                 # ← umpires and officials
+    "Dismissed cricket players",       # ← retired legends
+
 ]
 
 HEADERS = {
