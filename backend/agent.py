@@ -48,9 +48,16 @@ def _build_bm25():
     retriever.k = 10
     return retriever
 
-_bm25_retriever = _build_bm25()
 
-print("All components ready.")
+def _refresh_bm25():
+    """Rebuilds BM25 index after new docs are added to ChromaDB."""
+    global _bm25_retriever
+    print("Refreshing BM25 index...")
+    _bm25_retriever = _build_bm25()
+    print("BM25 index updated.")
+
+
+_bm25_retriever = _build_bm25()
 
 # Public API 
 
@@ -92,12 +99,20 @@ def format_docs(docs):
             unique.append(content)
     return "\n\n---\n\n".join(unique)
 
-def hybrid_retrieve(question: str):
+def hybrid_retrieve(question: str, context_hint: str = ""):
+    """
+    Retrieve relevant chunks. If context_hint is provided,
+    it's combined with the question for better retrieval
+    on vague follow-up questions.
+    """
+    # Use expanded query if we have context
+    search_query = f"{context_hint} {question}".strip() if context_hint else question
+
     vector_retriever = _vectorstore.as_retriever(
         search_kwargs={"k": 10}
     )
-    vector_docs = vector_retriever.invoke(question)
-    bm25_docs = _bm25_retriever.invoke(question)
+    vector_docs = vector_retriever.invoke(search_query)
+    bm25_docs = _bm25_retriever.invoke(search_query)
 
     seen = set()
     combined = []
