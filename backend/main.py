@@ -56,7 +56,7 @@ def ask_question(request: QuestionRequest):
             ensure_knowledge(request.question, history_text)
 
             # Retrieve relevant chunks from ChromaDB
-            docs = hybrid_retrieve(request.question)
+            docs = hybrid_retrieve(request.question, history_text)
             sources = [doc.page_content for doc in docs]
             context = format_docs(docs)
 
@@ -99,3 +99,4 @@ Answer:"""
             yield json.dumps({"type": "done"}) + "\n"
 
     return StreamingResponse(stream_response(), media_type="text/plain")
+

@@ -9,7 +9,20 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-FETCHED_TOPICS_FILE = "./backend/fetched_topics.json"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+FETCHED_TOPICS_FILE = os.path.join(BASE_DIR, "fetched_topics.json")
+
+# ── Cricket validation — defined first so fetch_wikipedia_article can use it
+CRICKET_KEYWORDS = [
+    "cricket", "batting", "bowling", "wicket", "innings",
+    "test match", "odi", "t20", "ipl", "bcci", "icc"
+]
+
+def is_cricket_related(content: str) -> bool:
+    content_lower = content.lower()
+    return any(keyword in content_lower for keyword in CRICKET_KEYWORDS)
+
+# ── rest of the file continues below (load_fetched_topics, save_fetched_topics, etc.)
 
 def load_fetched_topics() -> set:
     if Path(FETCHED_TOPICS_FILE).exists():
@@ -99,6 +112,10 @@ def fetch_wikipedia_article(topic: str) -> Document | None:
                             continue
                         content = page.get("extract", "")
                         if len(content) > 500:
+                            if not is_cricket_related(content):
+                                print(f" Skipping non-cricket article: '{page_title}'")
+                                continue
+
                             url = f"https://en.wikipedia.org/wiki/{page_title.replace(' ', '_')}"
                             print(f"  Matched '{topic}' → '{page_title}'")
                             return Document(
@@ -203,3 +220,4 @@ JSON array:"""
         print(f"Topic extraction failed: {e}")
 
     return []
+
