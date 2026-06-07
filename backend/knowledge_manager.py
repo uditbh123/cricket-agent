@@ -189,35 +189,25 @@ For example if they said "Nepal Premier League" earlier and now ask
 
 Your job: Convert the user's question into 1-3 Wikipedia article titles to search for.
 {history_section}
-Rules:
+STRICT RULES:
 - Return ONLY a valid JSON array of strings
-- No explanations, no markdown, just the JSON array
+- Every topic MUST be cricket-related — players, teams, tournaments, rules, history
+- If you cannot identify a cricket topic, return an empty array []
 - Maximum 3 topics
 - Use proper Wikipedia-style titles
-- If the question refers to something mentioned in the conversation history, use that
+- Generic words like "first season" or "history" alone are NOT valid topics
+- Always combine generic terms with the specific cricket subject
 
-Examples:
-"who is the little master" → ["Sachin Tendulkar"]
-"who won the first season?" (after discussing Nepal Premier League) → ["Nepal Premier League"]
+Bad examples:
+"first season" → TOO VAGUE, return []
+"history" → TOO VAGUE, return []
+"List of episodes" → NOT CRICKET, return []
+
+Good examples:
+"who won the first season?" (after discussing NPL) → ["Nepal Premier League"]
 "how many teams are in it?" (after discussing IPL) → ["Indian Premier League"]
 "what is a googly" → ["Googly cricket"]
 "fastest bowler ever" → ["Shoaib Akhtar", "Brett Lee"]
 
 Question: "{question}"
 JSON array:"""
-
-    try:
-        raw = llm.invoke(prompt)
-        response = raw.content if hasattr(raw, "content") else str(raw)
-        response = response.replace("```json", "").replace("```", "").strip()
-
-        start = response.find("[")
-        end = response.rfind("]") + 1
-        if start != -1 and end > start:
-            topics = json.loads(response[start:end])
-            return [t for t in topics if isinstance(t, str)][:3]
-    except Exception as e:
-        print(f"Topic extraction failed: {e}")
-
-    return []
-
