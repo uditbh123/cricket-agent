@@ -30,7 +30,7 @@ function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           question,
-          history: currentMessages.slice(-6).map(m => ({
+          history: currentMessages.slice(-12).map(m => ({
             role: m.role,
             content: m.content
           }))

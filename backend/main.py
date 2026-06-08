@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from typing import List
 from agent import get_llm, hybrid_retrieve, ensure_knowledge, format_docs
 import json
+from agent import get_llm, hybrid_retrieve, ensure_knowledge, format_docs, rerank_docs
 
 # ── Create the FastAPI application ──────────────────────────
 app = FastAPI()
@@ -65,7 +66,7 @@ def ask_question(request: QuestionRequest):
             # the prompt from getting too large for the LLM context window
             history_text = ""
             if request.history:
-                recent = request.history[-6:]
+                recent = request.history[-12:]
                 lines = []
                 for m in recent:
                     label = "User" if m.role == "user" else "Assistant"
@@ -93,19 +94,21 @@ def ask_question(request: QuestionRequest):
             # ── Step 4: Build prompt with history + context ──
             # The LLM sees: conversation history + Wikipedia context + question
             # This is what makes memory and grounded answers work together
-            prompt_text = f"""You are a cricket expert assistant with Wikipedia knowledge.
+            prompt_text = f"""You are a cricket expert assistant.
 
-Instructions:
-- Use the conversation history to understand context and references
-- "this league", "him", "they", "it", "the first season" should be resolved using history
-- Answer using the Wikipedia context provided
-- Be specific with names, dates, and numbers from the context
-- Do not invent facts not present in the context
+STRICT RULES:
+1. Answer ONLY using facts from your knowledge base
+2. NEVER mention "context", "Wikipedia", "sources" or "provided information" in your answer
+3. NEVER explain where your information comes from or does not come from
+4. If you don't have the answer, say ONLY: "I don't have information about that in my knowledge base."
+5. Never say things like "based on the context" or "the context primarily focuses on"
+6. NEVER invent facts, names, statistics, or dates
+7. Use conversation history to understand references like "this league", "him", "they", "it"
 
 Previous conversation:
 {history_text}
 
-Wikipedia Context:
+Knowledge base:
 {context}
 
 Current Question: {request.question}
