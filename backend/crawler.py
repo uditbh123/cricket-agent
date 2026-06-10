@@ -10,11 +10,17 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Categories to crawl — Wikipedia's own cricket taxonomy
 # Adding a category here pulls ALL articles inside it automatically
 CRICKET_CATEGORIES = [
+    # ── Core Cricket Knowledge ───────────────────────────────
     "Cricket",
     "Cricket terminology",
     "Cricket laws and regulations",
     "Cricket statistics",
     "Formats of cricket",
+    "History of cricket",
+    "Cricket culture",
+
+    # ── Players by Nationality ───────────────────────────────
+    # Major Test nations
     "Indian cricketers",
     "Australian cricketers",
     "English cricketers",
@@ -24,23 +30,104 @@ CRICKET_CATEGORIES = [
     "South African cricketers",
     "New Zealand cricketers",
     "Bangladeshi cricketers",
-    "Cricket competitions",
+    "Zimbabwean cricketers",
+
+    # Associate nations — growing cricket markets
+    "Afghan cricketers",
+    "Irish cricketers",
+    "Nepali cricketers",
+    "Scottish cricketers",
+    "Netherlands cricketers",
+    "UAE cricketers",
+    "Namibian cricketers",
+    "Oman cricketers",
+
+    # ── Tournaments and Competitions ─────────────────────────
+    # ICC events
     "Cricket World Cup",
-    "Indian Premier League seasons",
+    "ICC Cricket World Cup",
+    "ICC Men's T20 World Cup",
+    "ICC Champions Trophy",
+    "ICC World Test Championship",
+    "ICC Women's Cricket World Cup",
+    "ICC Under-19 Cricket World Cup",
+
+    # Bilateral series
+    "The Ashes series",
+    "Border-Gavaskar Trophy",
     "Test cricket",
     "One Day International cricket",
     "Twenty20 International cricket",
-    "Cricket grounds",
-    "Cricket records",
-    "Nepali cricketers",
-    "Nepal Premier League seasons",
-    "Cricket governing bodies",        # ← ICC, BCCI, ECB etc
-    "Cricket stadiums",                # ← all major grounds
-    "Cricket World Cup tournaments",   # ← every World Cup
-    "Women cricketers",                # ← women's cricket
-    "Cricket umpires",                 # ← umpires and officials
-    "Dismissed cricket players",       # ← retired legends
 
+    # Domestic T20 leagues — all major ones
+    "Indian Premier League seasons",
+    "Big Bash League seasons",
+    "Pakistan Super League seasons",
+    "Caribbean Premier League seasons",
+    "Bangladesh Premier League seasons",
+    "Lanka Premier League seasons",
+    "SA20 seasons",
+    "The Hundred seasons",
+    "Nepal Premier League seasons",
+
+    # ── Records ──────────────────────────────────────────────
+    "Cricket records",
+    "Cricket World Cup records",
+    "Test cricket records",
+    "One Day International cricket records",
+    "Twenty20 International records",
+    "Indian Premier League records",
+
+    # ── Grounds and Venues ───────────────────────────────────
+    "Cricket grounds",
+    "Cricket grounds in India",
+    "Cricket grounds in England",
+    "Cricket grounds in Australia",
+    "Cricket grounds in Pakistan",
+    "Cricket grounds in South Africa",
+    "Cricket grounds in the West Indies",
+    "Cricket grounds in New Zealand",
+    "Cricket grounds in Sri Lanka",
+    "Cricket grounds in Bangladesh",
+
+    # ── Governing Bodies and Officials ───────────────────────
+    "Cricket governing bodies",
+    "Cricket umpires",
+    "Cricket coaches",
+
+    # ── Women's Cricket ───────────────────────────────────────
+    "Women's cricket",
+    "Women cricketers",
+    "Indian women cricketers",
+    "Australian women cricketers",
+    "English women cricketers",
+
+    # ── Technical Aspects ─────────────────────────────────────
+    "Cricket batting",
+    "Cricket bowling",
+    "Cricket fielding positions",
+    "Cricket equipment",
+    "Cricket clothing and equipment",
+
+    # ── Nepal Cricket ─────────────────────────────────────────
+    "Cricket in Nepal",
+    "Nepal Premier League seasons",
+
+    # ── Player Categories by Skill ────────────────────────────
+    "Cricket captains",
+    "Cricket all-rounders",
+    "Wicket-keepers",
+    "Left-handed batsmen",
+    "Spin bowlers",
+    "Fast bowlers",
+
+    # ── Historical and Cultural ───────────────────────────────
+    "History of cricket",
+    "Cricket in popular culture",
+    "Cricket writers and broadcasters",
+    "Cricket controversies",
+    "Tied cricket matches",
+    "Super Overs in cricket",
 ]
 
 HEADERS = {
@@ -178,8 +265,8 @@ if __name__ == "__main__":
     print("No manual topic listing needed.\n")
 
     articles = discover_all_cricket_articles(
-        max_per_category=30,
-        max_total=300
+        max_per_category=50,
+        max_total=1000
     )
 
     print(f"\nDiscovered {len(articles)} unique cricket articles")
