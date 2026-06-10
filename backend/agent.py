@@ -332,3 +332,73 @@ def ensure_knowledge(question: str, history_text: str = "") -> None:
 
     if result["failed"]:
         print(f"Failed to fetch (will retry next time): {result['failed']}")
+
+
+def validate_context(question: str, context: str) -> dict:
+    """
+    Validation node — checks if retrieved context is sufficient
+    to answer the question before sending to the answer LLM.
+
+    Prevents hallucination by catching weak context early.
+    Instead of the LLM guessing from irrelevant chunks,
+    it honestly says it doesn't know.
+
+    Returns:
+        is_sufficient: bool — whether to proceed with answering
+        confidence: str — HIGH, MEDIUM, or LOW
+        reason: str — one line explanation (for terminal debugging)
+    """
+
+    validation_prompt = f"""You are a fact-checking assistant.
+Determine if the provided context contains enough information 
+to answer the question accurately.
+
+Question: {question}
+
+Context (first 800 chars):
+{context[:800]}
+
+Evaluate strictly:
+- HIGH: Context directly answers the question with specific facts
+- MEDIUM: Context has related information but not a complete answer  
+- LOW: Context is unrelated or too vague to answer the question
+
+Respond in this exact JSON format only, nothing else:
+{{"confidence": "HIGH", "reason": "one sentence explanation"}}
+
+JSON:"""
+
+    try:
+        raw = _llm.invoke(validation_prompt)
+        response = raw.content if hasattr(raw, "content") else str(raw)
+
+        # Strip markdown if model wraps in backticks
+        response = response.replace("```json", "").replace("```", "").strip()
+
+        # Extract JSON object
+        start = response.find("{")
+        end = response.rfind("}") + 1
+
+        if start != -1 and end > start:
+            result = json.loads(response[start:end])
+            confidence = result.get("confidence", "LOW").upper()
+            reason = result.get("reason", "no reason given")
+
+            print(f"Validation: {confidence} — {reason}")
+
+            return {
+                "is_sufficient": confidence in ["HIGH", "MEDIUM"],
+                "confidence": confidence,
+                "reason": reason
+            }
+
+    except Exception as e:
+        # If validation itself errors, default to proceeding
+        # Better to attempt an answer than block on a validation bug
+        print(f"Validation error (defaulting to proceed): {e}")
+
+    return {
+        "is_sufficient": True,
+        "confidence": "UNKNOWN",
+        "reason": "validation error — defaulting to proceed"
+    }
