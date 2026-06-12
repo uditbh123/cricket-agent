@@ -2,10 +2,10 @@ import { useEffect, useRef } from "react"
 import ChatMessage from "./ChatMessage"
 
 const SUGGESTIONS = [
-  "What are the Laws of Cricket?",
-  "How does Duckworth-Lewis work?",
-  "Who has the most Test centuries?",
-  "What is the difference between Test and T20?",
+  "Who has scored the most Test centuries?",
+  "How does the Duckworth-Lewis method work?",
+  "Tell me about the Nepal Premier League",
+  "Who is the fastest bowler ever?",
 ]
 
 function ChatWindow({ messages, isLoading, onSuggestion }) {
@@ -19,11 +19,11 @@ function ChatWindow({ messages, isLoading, onSuggestion }) {
     return (
       <div className="chat-window">
         <div className="empty-state">
-          <div className="empty-icon">🏏</div>
-          <h2>Cricket Knowledge Agent</h2>
+          <div className="empty-logo" />
+          <h2>Cricket Agent</h2>
           <p>
-            Ask me anything about cricket — rules, players,
-            tournaments, records, or history.
+            Ask me anything about cricket — players, rules,
+            records, tournaments, history.
           </p>
           <div className="suggestions">
             {SUGGESTIONS.map((s, i) => (
@@ -48,8 +48,7 @@ function ChatWindow({ messages, isLoading, onSuggestion }) {
       ))}
 
       {isLoading && messages[messages.length - 1]?.role !== "assistant" && (
-        <div className="message assistant">
-          <span className="message-label">Cricket Agent</span>
+        <div className="typing-wrap">
           <div className="typing-indicator">
             <span /><span /><span />
           </div>

@@ -1,6 +1,6 @@
 import { useState, useRef } from "react"
 
-const MAX_CHARS = 300
+const MAX_CHARS = 500
 
 function ChatInput({ onSend, isLoading }) {
   const [input, setInput] = useState("")
@@ -11,7 +11,7 @@ function ChatInput({ onSend, isLoading }) {
     onSend(input.trim())
     setInput("")
     if (textareaRef.current) {
-      textareaRef.current.style.height = "46px"
+      textareaRef.current.style.height = "24px"
     }
   }
 
@@ -27,40 +27,44 @@ function ChatInput({ onSend, isLoading }) {
     setInput(e.target.value)
     const ta = textareaRef.current
     if (ta) {
-      ta.style.height = "46px"
-      ta.style.height = Math.min(ta.scrollHeight, 130) + "px"
+      ta.style.height = "24px"
+      ta.style.height = Math.min(ta.scrollHeight, 160) + "px"
     }
   }
 
   const remaining = MAX_CHARS - input.length
-  const charClass =
-    remaining < 20 ? "danger" : remaining < 60 ? "warning" : ""
+  const charClass = remaining < 30 ? "danger" : remaining < 80 ? "warning" : ""
 
   return (
-    <div className="chat-input-area">
-      <div className="input-row">
-        <textarea
-          ref={textareaRef}
-          value={input}
-          onChange={handleChange}
-          onKeyDown={handleKeyDown}
-          placeholder="Ask a cricket question... (Enter to send, Shift+Enter for new line)"
-          disabled={isLoading}
-          rows={1}
-        />
-        <button
-          className="send-button"
-          onClick={handleSend}
-          disabled={isLoading || !input.trim()}
-          title="Send"
-        >
-          ↑
-        </button>
-      </div>
-      <div className="input-meta">
-        <span className={`char-count ${charClass}`}>
-          {remaining < 100 ? `${remaining} left` : ""}
-        </span>
+    <div className="input-area">
+      <div className="input-container">
+        <div className="input-row">
+          <textarea
+            ref={textareaRef}
+            value={input}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            placeholder="Ask anything about cricket..."
+            disabled={isLoading}
+            rows={1}
+          />
+          <button
+            className="send-btn"
+            onClick={handleSend}
+            disabled={isLoading || !input.trim()}
+            title="Send"
+          >
+            ↑
+          </button>
+        </div>
+        <div className="input-footer">
+          <span className="input-hint">
+            Enter to send · Shift+Enter for new line
+          </span>
+          <span className={`char-count ${charClass}`}>
+            {remaining < 150 ? `${remaining}` : ""}
+          </span>
+        </div>
       </div>
     </div>
   )
