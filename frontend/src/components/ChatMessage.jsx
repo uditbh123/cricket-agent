@@ -1,4 +1,5 @@
 import { useState } from "react"
+import ReactMarkdown from "react-markdown"
 
 function ChatMessage({ message }) {
   const [showSources, setShowSources] = useState(false)
@@ -11,16 +12,20 @@ function ChatMessage({ message }) {
   }
 
   return (
-    <div className={`message ${message.role}`}>
+    <div className={`message-group ${message.role}`}>
       <span className="message-label">
         {message.role === "user" ? "You" : "Cricket Agent"}
       </span>
 
-      {message.isError ? (
+      {message.role === "user" ? (
+        <div className="user-bubble">{message.content}</div>
+      ) : message.isError ? (
         <div className="error-bubble">{message.content}</div>
       ) : (
-        <div className="message-bubble">
-          {message.content}
+        <div className="assistant-bubble">
+          <div className="md-content">
+            <ReactMarkdown>{message.content}</ReactMarkdown>
+          </div>
           {message.isStreaming && (
             <span className="streaming-cursor" />
           )}
@@ -30,7 +35,7 @@ function ChatMessage({ message }) {
       {message.role === "assistant" && !message.isError && !message.isStreaming && (
         <div className="message-actions">
           <button
-            className={`copy-btn ${copied ? "copied" : ""}`}
+            className={`action-btn ${copied ? "copied" : ""}`}
             onClick={handleCopy}
           >
             {copied ? "✓ Copied" : "Copy"}
@@ -48,11 +53,13 @@ function ChatMessage({ message }) {
       )}
 
       {showSources && message.sources && (
-        <div className="sources-list">
-          {message.sources.map((source, index) => (
-            <div key={index} className="source-item">
-              <strong style={{ color: "#444" }}>#{index + 1}</strong>{" "}
-              {source}
+        <div className="sources-panel">
+          <div className="sources-panel-header">
+            Sources used
+          </div>
+          {message.sources.map((source, i) => (
+            <div key={i} className="source-item">
+              {source.slice(0, 200)}{source.length > 200 ? "..." : ""}
             </div>
           ))}
         </div>
