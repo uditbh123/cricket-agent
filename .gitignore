@@ -40,3 +40,7 @@ Thumbs.db
 
 # API Keys 
 backend/.env
+
+# Graphify
+graphify-out/
+.graphifyignore

@@ -98,32 +98,31 @@ function App() {
   const clearChat = () => setMessages([])
 
   return (
-    <div className="app">
-      <div className="header">
-        <div className="header-icon">🏏</div>
-        <div className="header-text">
-          <h1>Cricket Agent</h1>
-          <p>LLaMA 3.1 8b · Wikipedia RAG · Groq</p>
-        </div>
-        <div className="header-actions">
-          {messages.length > 0 && (
-            <button className="clear-btn" onClick={clearChat}>
-              Clear chat
-            </button>
-          )}
-          <div className="status-dot" title="Backend running" />
-        </div>
+  <div className="app">
+    <div className="header">
+      <div className="header-brand">
+        <div className="logo" />
+        <h1>Cricket Agent <span>by Wikipedia RAG</span></h1>
       </div>
-
-      <ChatWindow
-        messages={messages}
-        isLoading={isLoading}
-        onSuggestion={sendMessage}
-      />
-
-      <ChatInput onSend={sendMessage} isLoading={isLoading} />
+      <div className="header-actions">
+        {messages.length > 0 && (
+          <button className="clear-btn" onClick={clearChat}>
+            New chat
+          </button>
+        )}
+        <div className="status-dot" title="Connected" />
+      </div>
     </div>
-  )
+
+    <ChatWindow
+      messages={messages}
+      isLoading={isLoading}
+      onSuggestion={sendMessage}
+    />
+
+    <ChatInput onSend={sendMessage} isLoading={isLoading} />
+  </div>
+)
 }
 
 export default App
