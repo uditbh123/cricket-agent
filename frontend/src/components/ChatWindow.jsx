@@ -1,13 +1,6 @@
 import { useEffect, useRef } from "react"
 import ChatMessage from "./ChatMessage"
 
-const SUGGESTIONS = [
-  "Who has scored the most Test centuries?",
-  "How does the Duckworth-Lewis method work?",
-  "Tell me about the Nepal Premier League",
-  "Who is the fastest bowler ever?",
-]
-
 function ChatWindow({ messages, isLoading, onSuggestion }) {
   const bottomRef = useRef(null)
 
@@ -17,25 +10,11 @@ function ChatWindow({ messages, isLoading, onSuggestion }) {
 
   if (messages.length === 0) {
     return (
-      <div className="chat-window">
+      <div className="chat-window" style={{ overflow: "hidden" }}>
         <div className="empty-state">
           <div className="empty-logo" />
-          <h2>Cricket Agent</h2>
-          <p>
-            Ask me anything about cricket — players, rules,
-            records, tournaments, history.
-          </p>
-          <div className="suggestions">
-            {SUGGESTIONS.map((s, i) => (
-              <button
-                key={i}
-                className="suggestion-btn"
-                onClick={() => onSuggestion(s)}
-              >
-                {s}
-              </button>
-            ))}
-          </div>
+          <h2>What do you want to know?</h2>
+          <p>Ask me anything about cricket</p>
         </div>
       </div>
     )
