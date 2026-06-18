@@ -1,12 +1,12 @@
 import { useEffect, useRef } from "react"
 import ChatMessage from "./ChatMessage"
 
-function ChatWindow({ messages, isLoading, onSuggestion }) {
+function ChatWindow({ messages, isLoading }) {
   const bottomRef = useRef(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages, isLoading])
+  }, [messages])
 
   if (messages.length === 0) {
     return (
@@ -20,13 +20,20 @@ function ChatWindow({ messages, isLoading, onSuggestion }) {
     )
   }
 
+  // Show typing indicator only when loading AND the last message is
+  // from the user (i.e. assistant reply hasn't started yet).
+  // Once the assistant message exists (even empty/streaming), we stop
+  // showing the dots — the streaming cursor takes over.
+  const lastMessage = messages[messages.length - 1]
+  const showTyping = isLoading && lastMessage?.role === "user"
+
   return (
     <div className="chat-window">
-      {messages.map((message, index) => (
-        <ChatMessage key={index} message={message} />
+      {messages.map(message => (
+        <ChatMessage key={message.id} message={message} />
       ))}
 
-      {isLoading && messages[messages.length - 1]?.role !== "assistant" && (
+      {showTyping && (
         <div className="typing-wrap">
           <div className="typing-indicator">
             <span /><span /><span />
