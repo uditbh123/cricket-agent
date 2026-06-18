@@ -1,7 +1,5 @@
 @import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 
-/* Reset Vite's default root constraints so Tailwind can take over */
 :root, body, #root {
   margin: 0;
   padding: 0;
@@ -11,11 +9,10 @@
 
 body {
   font-family: 'Plus Jakarta Sans', sans-serif;
-  background-color: #09090b; /* Deep rich zinc/gray */
+  background-color: #09090b;
   color: #e4e4e7;
 }
 
-/* Our glowing text effect for the title */
 .text-gradient {
   background: linear-gradient(to right, #4ade80, #f97316);
   -webkit-background-clip: text;
