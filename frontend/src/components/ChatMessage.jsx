@@ -11,58 +11,63 @@ function ChatMessage({ message }) {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  return (
-    <div className={`message-group ${message.role}`}>
-      <span className="message-label">
-        {message.role === "user" ? "You" : "Cricket Agent"}
-      </span>
-
-      {message.role === "user" ? (
+  if (message.role === "user") {
+    return (
+      <div className="message-group user">
+        <span className="message-label">You</span>
         <div className="user-bubble">{message.content}</div>
-      ) : message.isError ? (
+      </div>
+    )
+  }
+
+  // Assistant message
+  return (
+    <div className="message-group assistant">
+      <span className="message-label">Cricket Agent</span>
+
+      {message.isError ? (
         <div className="error-bubble">{message.content}</div>
       ) : (
         <div className="assistant-bubble">
           <div className="md-content">
             <ReactMarkdown>{message.content}</ReactMarkdown>
           </div>
-          {message.isStreaming && (
-            <span className="streaming-cursor" />
-          )}
+          {message.isStreaming && <span className="streaming-cursor" />}
         </div>
       )}
 
-      {message.role === "assistant" && !message.isError && !message.isStreaming && (
-        <div className="message-actions">
-          <button
-            className={`action-btn ${copied ? "copied" : ""}`}
-            onClick={handleCopy}
-          >
-            {copied ? "✓ Copied" : "Copy"}
-          </button>
-
-          {message.sources && message.sources.length > 0 && (
+      {/* Actions only shown when streaming is done and no error */}
+      {!message.isStreaming && !message.isError && (
+        <>
+          <div className="message-actions">
             <button
-              className="sources-toggle"
-              onClick={() => setShowSources(!showSources)}
+              className={`action-btn ${copied ? "copied" : ""}`}
+              onClick={handleCopy}
             >
-              {showSources ? "Hide sources" : `${message.sources.length} sources`}
+              {copied ? "✓ Copied" : "Copy"}
             </button>
-          )}
-        </div>
-      )}
 
-      {showSources && message.sources && (
-        <div className="sources-panel">
-          <div className="sources-panel-header">
-            Sources used
+            {message.sources?.length > 0 && (
+              <button
+                className="sources-toggle"
+                onClick={() => setShowSources(v => !v)}
+              >
+                {showSources ? "Hide sources" : `${message.sources.length} sources`}
+              </button>
+            )}
           </div>
-          {message.sources.map((source, i) => (
-            <div key={i} className="source-item">
-              {source.slice(0, 200)}{source.length > 200 ? "..." : ""}
+
+          {showSources && (
+            <div className="sources-panel">
+              <div className="sources-panel-header">Sources used</div>
+              {message.sources.map((source, i) => (
+                <div key={i} className="source-item">
+                  {source.length > 200 ? source.slice(0, 200) + "…" : source}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
     </div>
   )
