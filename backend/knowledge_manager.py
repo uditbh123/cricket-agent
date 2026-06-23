@@ -158,7 +158,8 @@ def add_topics_to_db(topics: list, vectorstore) -> dict:
     added = []
     failed = []
 
-    for topic in new_topics:
+    for i, topic in enumerate(new_topics):
+        print(f"\n[{i+1}/{len(new_topics)}] Fetching: {topic}")
         doc = fetch_wikipedia_article(topic)
         if doc:
             chunks = splitter.split_documents([doc])
@@ -166,6 +167,7 @@ def add_topics_to_db(topics: list, vectorstore) -> dict:
                 vectorstore.add_documents(chunks)
                 fetched_topics.add(topic.lower())
                 added.append(topic)
+                save_fetched_topics(fetched_topics)  # save after every success
                 print(f"  ✓ {topic} — {len(chunks)} chunks added")
             else:
                 failed.append(topic)
@@ -173,7 +175,10 @@ def add_topics_to_db(topics: list, vectorstore) -> dict:
             failed.append(topic)
             print(f"  ✗ Could not fetch: {topic}")
 
-    save_fetched_topics(fetched_topics)
+        # Pause between every topic — prevents rate limiting
+        if i < len(new_topics) - 1:
+            time.sleep(3)
+
     return {"added": added, "skipped": skipped, "failed": failed}
 
 def extract_topics_from_question(question: str, llm, history_text: str = "") -> list:
