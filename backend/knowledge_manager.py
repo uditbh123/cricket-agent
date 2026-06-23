@@ -43,11 +43,13 @@ def fetch_wikipedia_article(topic: str) -> Document | None:
         "User-Agent": "cricket-agent/1.0 (educational project; contact@example.com)"
     }
 
-    # Retry up to 3 times with increasing delay
-    for attempt in range(3):
+    for attempt in range(4):  # 4 attempts instead of 3
         try:
-            wait_time = 2 + (attempt * 3)  # 2s, 5s, 8s
-            time.sleep(wait_time)
+            # Only delay on retries, not first attempt
+            if attempt > 0:
+                wait_time = [15, 30, 60][attempt - 1]  # 15s, 30s, 60s
+                print(f"  Waiting {wait_time}s before retry {attempt + 1}...")
+                time.sleep(wait_time)
 
             search_params = {
                 "action": "query",
@@ -65,7 +67,10 @@ def fetch_wikipedia_article(topic: str) -> Document | None:
                 timeout=15
             )
 
-            # Check if response is valid
+            if search_response.status_code == 429:
+                print(f"  Rate limited on '{topic}', will retry with longer wait...")
+                continue
+
             if search_response.status_code != 200:
                 print(f"  HTTP {search_response.status_code} for '{topic}', retrying...")
                 continue
@@ -84,7 +89,7 @@ def fetch_wikipedia_article(topic: str) -> Document | None:
             for result in results:
                 page_title = result["title"]
                 try:
-                    time.sleep(1)
+                    time.sleep(2)  # always wait between search and content fetch
                     content_params = {
                         "action": "query",
                         "titles": page_title,
@@ -113,7 +118,7 @@ def fetch_wikipedia_article(topic: str) -> Document | None:
                         content = page.get("extract", "")
                         if len(content) > 500:
                             if not is_cricket_related(content):
-                                print(f" Skipping non-cricket article: '{page_title}'")
+                                print(f"  Skipping non-cricket article: '{page_title}'")
                                 continue
 
                             url = f"https://en.wikipedia.org/wiki/{page_title.replace(' ', '_')}"

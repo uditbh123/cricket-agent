@@ -7,8 +7,9 @@ function ChatInput({ onSend, isLoading }) {
   const textareaRef = useRef(null)
 
   const handleSend = () => {
-    if (!input.trim() || isLoading) return
-    onSend(input.trim())
+    const trimmed = input.trim()
+    if (!trimmed || isLoading) return
+    onSend(trimmed)
     setInput("")
     if (textareaRef.current) {
       textareaRef.current.style.height = "24px"
@@ -58,11 +59,9 @@ function ChatInput({ onSend, isLoading }) {
           </button>
         </div>
         <div className="input-footer">
-          <span className="input-hint">
-            Enter to send · Shift+Enter for new line
-          </span>
+          <span className="input-hint">Enter to send · Shift+Enter for new line</span>
           <span className={`char-count ${charClass}`}>
-            {remaining < 150 ? `${remaining}` : ""}
+            {remaining < 150 ? remaining : ""}
           </span>
         </div>
       </div>
