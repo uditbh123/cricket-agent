@@ -55,9 +55,9 @@ _vectorstore = Chroma(
 
 print("Loading LLM (Groq - Qwen 3.6 27B)...")
 # ChatGroq connects to Groq's cloud API.
-# llama-3.3-27b-versatile = 27 billion parameters, very capable.
-# temperature=0.1 = more focused/deterministic (less random/creative).
-# Lower temperature is better for factual Q&A.
+# qwen/qwen3.6-27b = 27 billion parameter model by Alibaba's Qwen team.
+# Replacement for llama-3.3-70b-versatile (deprecated August 2026).
+# temperature=0.1 = more focused/deterministic, better for factual Q&A.
 # max_tokens=1024 = maximum length of each response.
 _llm = ChatGroq(
     model="qwen/qwen3.6-27b",
