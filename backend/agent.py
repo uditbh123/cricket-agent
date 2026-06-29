@@ -53,14 +53,14 @@ _vectorstore = Chroma(
     embedding_function=_embeddings
 )
 
-print("Loading LLM (Groq - LLaMA 3.3 70B)...")
+print("Loading LLM (Groq - Qwen 3.6 27B)...")
 # ChatGroq connects to Groq's cloud API.
-# llama-3.3-70b-versatile = 70 billion parameters, very capable.
+# llama-3.3-27b-versatile = 27 billion parameters, very capable.
 # temperature=0.1 = more focused/deterministic (less random/creative).
 # Lower temperature is better for factual Q&A.
 # max_tokens=1024 = maximum length of each response.
 _llm = ChatGroq(
-    model="llama-3.3-70b-versatile",
+    model="qwen/qwen3.6-27b",
     temperature=0.1,
     max_tokens=1024,
 )

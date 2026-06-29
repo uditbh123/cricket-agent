@@ -20,9 +20,9 @@ app = FastAPI(
 
 # ── CORS Middleware ──────────────────────────────────────────
 # Without this, browsers block requests from React (port 5173)
-# to FastAPI (port 8000) — a security feature called Same-Origin Policy
-# allow_origins=["*"] allows all origins — fine for development
-# In production, replace * with your actual frontend URL
+# to FastAPI (port 8000) — same-origin policy blocks cross-port requests.
+# allow_origins=["*"] is fine for development.
+# In production, replace * with your actual frontend URL (e.g. https://cricket-agent.vercel.app)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -31,9 +31,9 @@ app.add_middleware(
 )
 
 # ── Data Models ──────────────────────────────────────────────
-# Pydantic models do two things:
-# 1. Validate incoming JSON automatically (wrong type = 422 error)
-# 2. Document the API schema (visible at /docs)
+# Pydantic validates incoming JSON automatically.
+# Wrong type = 422 error returned to client.
+# These models also generate the schema visible at /docs.
 
 class Message(BaseModel):
     """A single message in the conversation history."""
@@ -41,22 +41,18 @@ class Message(BaseModel):
     content: str    # the actual message text
 
 class QuestionRequest(BaseModel):
-    """
-    The request body for the /ask endpoint.
-    Frontend sends this every time user submits a question.
-    """
+    """Request body for the /ask endpoint."""
     question: str                   # current question from user
-    history: List[Message] = []     # full conversation so far (empty by default)
+    history: List[Message] = []     # full conversation so far
 
-# ── Helper: Build History Text ───────────────────────────────
+
+# ── Helper: Full History for LLM Prompt ─────────────────────
 def build_history_text(history: List[Message], max_messages: int = 12) -> str:
     """
-    Convert conversation history list into a formatted string
-    for the LLM prompt.
+    Convert conversation history into a formatted string for the LLM answer prompt.
 
-    We limit to last 12 messages (6 turns) to keep the prompt
-    from getting too long. Beyond that, context gets noisy and
-    the LLM loses focus on the current question.
+    Limited to last 12 messages (6 full turns) to keep the prompt
+    from getting too long. Beyond that, context gets noisy.
 
     Format:
         User: what is the Nepal Premier League?
@@ -65,7 +61,6 @@ def build_history_text(history: List[Message], max_messages: int = 12) -> str:
     """
     if not history:
         return ""
-
     recent = history[-max_messages:]
     lines = []
     for m in recent:
@@ -74,27 +69,35 @@ def build_history_text(history: List[Message], max_messages: int = 12) -> str:
     return "\n".join(lines)
 
 
+# ── Helper: Short Context for Retrieval ─────────────────────
 def build_retrieval_hint(history: List[Message]) -> str:
     """
-    Build a short context hint for retrieval from the last 2 messages.
+    Build a short structured context hint for retrieval and topic extraction.
 
-    We use a SHORT slice here (not the full history) because
-    retrieval works better with focused queries. Sending the full
-    history as the search query makes it too noisy and returns
-    irrelevant chunks.
+    Uses last 4 messages (not 2) with proper User/Assistant labels so the
+    LLM can resolve follow-up references correctly.
 
-    Example:
-        History: [..., "User: what is NPL?", "Assistant: NPL is..."]
-        Hint: "what is NPL? NPL is..."
+    Example — what the LLM sees:
+        User: what is NPL?
+        Assistant: The Nepal Premier League (NPL) is a T20 league...
+        User: who won the first season of it?
 
-    This hint is combined with the current question so follow-up
-    questions like "who won the first season?" retrieve NPL chunks
-    instead of random cricket chunks.
+    With this structure, "it" clearly resolves to "Nepal Premier League".
+    Without labels (old version), the LLM couldn't tell what was asked
+    vs what was answered, so follow-ups failed.
+
+    Assistant responses are truncated to 300 chars — we only need enough
+    to identify the topic being discussed, not the full answer.
     """
     if not history:
         return ""
-    last_two = history[-2:]
-    return " ".join([m.content for m in last_two])
+    last_four = history[-4:]
+    lines = []
+    for m in last_four:
+        label = "User" if m.role == "user" else "Assistant"
+        content = m.content[:300] if m.role == "assistant" else m.content
+        lines.append(f"{label}: {content}")
+    return "\n".join(lines)
 
 
 # ── Health Check ─────────────────────────────────────────────
@@ -102,8 +105,7 @@ def build_retrieval_hint(history: List[Message]) -> str:
 def health():
     """
     Simple health check endpoint.
-    React frontend can ping this to verify backend is running.
-    Visit http://localhost:8000/health to check server status.
+    Visit http://localhost:8000/health to verify the server is running.
     """
     return {"status": "running", "version": "1.0.0"}
 
@@ -112,22 +114,21 @@ def health():
 @app.post("/ask")
 def ask_question(request: QuestionRequest):
     """
-    The core endpoint. Receives a cricket question + conversation
-    history, runs the full RAG pipeline, and streams the answer
-    back token by token.
+    Core endpoint. Receives a cricket question + conversation history,
+    runs the full RAG pipeline, and streams the answer token by token.
 
     Pipeline:
-        1. Build history context
-        2. Fetch missing Wikipedia knowledge dynamically
-        3. Hybrid retrieval (vector + BM25)
-        4. Rerank chunks by relevance
-        5. Validate context is sufficient
+        1. Build history strings (full for LLM, short for retrieval)
+        2. Dynamically fetch missing Wikipedia knowledge
+        3. Hybrid retrieval — vector search + BM25 keyword search
+        4. Rerank chunks by relevance using LLM
+        5. Validate context is sufficient to answer
         6. Stream answer token by token
 
-    Returns a StreamingResponse with newline-delimited JSON events:
-        {"type": "sources", "data": [...]}  — retrieved chunks
-        {"type": "token",   "data": "word"} — each answer token
-        {"type": "done"}                    — stream complete
+    Stream events (newline-delimited JSON):
+        {"type": "sources", "data": [...]}   — retrieved chunks
+        {"type": "token",   "data": "word"}  — each answer token
+        {"type": "done"}                     — stream complete
     """
     llm = get_llm()
 
@@ -138,55 +139,61 @@ def ask_question(request: QuestionRequest):
             print(f"History : {len(request.history)} messages")
 
             # ── Step 1: Build history strings ────────────────
-            # Two different history formats for two different purposes:
-            # - history_text: full context for the LLM answer prompt
-            # - retrieval_hint: short context for better chunk retrieval
+            # history_text — full formatted history for the LLM answer prompt.
+            # Lets the LLM understand references like "this league", "him", "they".
+            #
+            # retrieval_hint — short structured snippet for retrieval.
+            # Used by ensure_knowledge and hybrid_retrieve to resolve
+            # follow-up questions like "who won the first season of it?"
+            # back to the correct topic (e.g. Nepal Premier League).
             history_text = build_history_text(request.history)
             retrieval_hint = build_retrieval_hint(request.history)
 
             # ── Step 2: Dynamic knowledge fetching ───────────
-            # If user asks about something not in our DB,
-            # this fetches the Wikipedia article automatically.
-            # Uses history so "who won the first season?"
-            # after NPL discussion fetches NPL, not IPL.
-            # Fails gracefully — if Wikipedia is slow/down,
-            # we still try to answer from existing knowledge.
+            # If the question is about something not in our DB,
+            # this fetches the Wikipedia article and adds it permanently.
+            # Uses retrieval_hint so follow-up questions fetch the right topic.
+            # Fault-tolerant — if Wikipedia is slow/down, we still answer
+            # from existing knowledge.
             ensure_knowledge(request.question, retrieval_hint)
 
             # ── Step 3: Hybrid retrieval ──────────────────────
-            # Searches ChromaDB using both:
-            # - Vector search: semantic similarity (finds meaning)
-            # - BM25 search: keyword matching (finds exact terms)
-            # Returns up to 12 unique chunks combined from both
+            # Combines two complementary search strategies:
+            # - Vector search (ChromaDB): semantic similarity
+            #   "little master" → finds Sachin Tendulkar chunks
+            # - BM25: exact keyword matching
+            #   "Muralitharan 800 wickets" → finds exact chunks
+            # Returns up to 12 unique chunks combined from both.
             docs = hybrid_retrieve(request.question, retrieval_hint)
 
             # ── Step 4: Reranking ─────────────────────────────
-            # LLM reads all 12 chunks and picks the 8 most relevant
-            # This fixes cases where embedding model returns wrong
-            # chunks (e.g. Terry Alderman when asking about wickets)
+            # LLM reads all 12 chunks and picks the 8 most relevant.
+            # Fixes cases where the embedding model retrieves wrong chunks
+            # (e.g. Terry Alderman chunks when asking about most Test wickets).
+            # Adds ~0.5s but dramatically improves answer accuracy.
             docs = rerank_docs(request.question, docs)
 
-            # Format chunks into context string for the prompt
+            # Format chunks into a single context string for the prompt.
+            # format_docs also deduplicates — hybrid search often returns
+            # the same chunk from both vector and BM25.
             sources = [doc.page_content for doc in docs]
             context = format_docs(docs)
 
-            # Send sources to frontend so user can inspect them
+            # Send sources to frontend so user can inspect retrieved chunks.
             yield json.dumps({"type": "sources", "data": sources}) + "\n"
 
             # ── Step 5: Validation Node ───────────────────────
-            # This is the key hallucination prevention step.
-            # Before answering, LLM checks: "Do I actually have
-            # enough information to answer this accurately?"
+            # Key hallucination prevention step.
+            # LLM checks: "Is this context actually sufficient to answer?"
             #
-            # Without this: LLM guesses from irrelevant chunks
-            # With this: LLM honestly says "I don't know"
+            # HIGH / MEDIUM → proceed to answer
+            # LOW → return honest "I don't know" instead of a wrong answer
             #
-            # Returns: {"is_sufficient": bool, "confidence": str}
+            # Without this: LLM confidently hallucinates from irrelevant chunks.
+            # With this: LLM honestly admits when it doesn't have enough info.
             validation = validate_context(request.question, context)
 
             if not validation["is_sufficient"]:
-                # Context is too weak — give honest response
-                # instead of a confident wrong answer
                 print(f"Validation FAILED: {validation['reason']}")
                 yield json.dumps({
                     "type": "token",
@@ -199,13 +206,11 @@ def ask_question(request: QuestionRequest):
 
             # ── Step 6: Build prompt and stream answer ────────
             # Prompt structure:
-            # [strict rules] + [conversation history] + [context] + [question]
+            #   [strict rules] + [conversation history] + [context] + [question]
             #
-            # We pass history so the LLM resolves references like
-            # "this league", "him", "they" correctly.
-            #
-            # We name it "Knowledge base" not "Wikipedia context"
-            # so the LLM doesn't say "based on the Wikipedia context..."
+            # history_text lets the LLM resolve pronouns and references.
+            # We call it "Knowledge base" not "Wikipedia context" so the LLM
+            # doesn't leak source mentions into its answers.
             prompt_text = f"""You are a cricket expert assistant.
 
 STRICT RULES:
@@ -228,51 +233,51 @@ Current Question: {request.question}
 
 Answer:"""
 
-            # Stream the answer token by token
-            # Groq returns AIMessageChunk objects — we extract .content
-            # Each chunk is sent immediately so the frontend can
-            # display words as they arrive (like ChatGPT)
+            # Stream answer token by token.
+            # Groq returns AIMessageChunk objects — we extract .content from each.
+            # Each token is sent immediately so the frontend displays words
+            # as they arrive, like ChatGPT.
             for chunk in llm.stream(prompt_text):
                 token = chunk.content if hasattr(chunk, "content") else str(chunk)
-                if token:  # skip empty chunks
+                if token:
                     yield json.dumps({"type": "token", "data": token}) + "\n"
 
-            # Signal to frontend that streaming is complete
+            # Signal to frontend that streaming is complete.
             yield json.dumps({"type": "done"}) + "\n"
-            print(f"Response complete")
+            print("Response complete")
 
         except Exception as e:
-            # Never let an error crash silently
-            # Always send an error token so frontend shows something
+            # Never crash silently — always send something to the frontend.
             print(f"Error in stream_response: {e}")
             yield json.dumps({
                 "type": "token",
-                "data": f"Something went wrong on the server. Please try again."
+                "data": "Something went wrong on the server. Please try again."
             }) + "\n"
             yield json.dumps({"type": "done"}) + "\n"
 
-    # StreamingResponse sends generator output incrementally
-    # React reads this with response.body.getReader()
-    # media_type="text/plain" so browser treats it as a stream
+    # StreamingResponse sends generator output incrementally.
+    # React reads this with response.body.getReader().
+    # media_type="text/plain" tells the browser to treat it as a stream.
     return StreamingResponse(stream_response(), media_type="text/plain")
 
 
-# ── Summarize History Helper ─────────────────────────────────
+# ── Long Conversation Summarization ─────────────────────────
 def summarize_old_history(history: List[Message], llm) -> str:
     """
-    For very long conversations, summarize older messages
-    instead of dropping them completely.
+    For very long conversations, summarize older messages instead of
+    dropping them. Keeps full context without blowing up the prompt size.
 
     Strategy:
     - Short history (≤12 messages): use directly, no summary needed
-    - Long history (>12 messages): summarize old + keep recent verbatim
+    - Long history (>12 messages): summarize old + keep last 6 verbatim
 
-    This means the agent remembers the full conversation even
-    after many turns — early context isn't just dropped.
+    This function exists but is not yet wired into the main request flow.
+    To enable: replace build_history_text(request.history) in stream_response
+    with summarize_old_history(request.history, llm).
 
     Example output:
-        [Earlier: User asked about Nepal Premier League. Agent explained
-        it's a T20 league founded in 2024 with 8 teams.]
+        [Earlier in conversation: User asked about Nepal Premier League.
+        Agent explained it's a T20 league with 8 franchise teams.]
 
         User: who won the first season?
         Assistant: Janakpur Bolts won the first season.
@@ -281,7 +286,6 @@ def summarize_old_history(history: List[Message], llm) -> str:
     if len(history) <= 12:
         return build_history_text(history)
 
-    # Split into old and recent
     old_messages = history[:-6]
     recent_messages = history[-6:]
 
@@ -309,4 +313,3 @@ Summary:"""
     if summary:
         return f"[Earlier in conversation: {summary}]\n\n{recent_text}"
     return recent_text
-

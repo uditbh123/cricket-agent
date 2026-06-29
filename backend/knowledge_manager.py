@@ -216,8 +216,11 @@ Bad examples:
 Good examples:
 "who won the first season?" (after discussing NPL) → ["Nepal Premier League"]
 "how many teams are in it?" (after discussing IPL) → ["Indian Premier League"]
-"what is a googly" → ["Googly cricket"]
+"what is a googly" → ["Googly (cricket)"]
 "fastest bowler ever" → ["Shoaib Akhtar", "Brett Lee"]
+"when did he retire?" (after discussing Sachin Tendulkar) → ["Sachin Tendulkar"]
+"which team did they beat in the final?" (after discussing 2024 T20 World Cup) → ["2024 ICC Men's T20 World Cup"]
+"tell me more about it" (after discussing Bodyline series) → ["Bodyline"]
 
 Question: "{question}"
 JSON array:"""
