@@ -67,15 +67,6 @@ _llm = ChatGroq(
 
 print("Building BM25 index...")
 
-def _strip_think(response: str) -> str:
-    """
-    Strip Qwen 3.6 reasoning blocks from LLM responses.
-    Qwen wraps internal reasoning in <think>...</think> before answering.
-    These blocks must be removed before parsing JSON responses.
-    """
-    if "</think>" in response:
-        return response.split("</think>", 1)[-1].strip()
-    return response.strip()
 
 # ── BM25 Helper Functions ────────────────────────────────────
 
@@ -206,7 +197,7 @@ JSON array:"""
 
     try:
         raw = _llm.invoke(rerank_prompt)
-        response = raw.content if hasattr(raw, "content") else str(raw)
+        response = _strip_think(raw.content if hasattr(raw, "content") else str(raw))
 
         # Strip markdown code blocks if model wraps response
         response = response.replace("```json", "").replace("```", "").strip()
@@ -380,7 +371,7 @@ JSON:"""
 
     try:
         raw = _llm.invoke(validation_prompt)
-        response = raw.content if hasattr(raw, "content") else str(raw)
+        response = _strip_think(raw.content if hasattr(raw, "content") else str(raw))
 
         # Strip markdown if model wraps in backticks
         response = response.replace("```json", "").replace("```", "").strip()
