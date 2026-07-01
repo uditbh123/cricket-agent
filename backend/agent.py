@@ -62,7 +62,7 @@ print("Loading LLM (Groq - Qwen 3.6 27B)...")
 _llm = ChatGroq(
     model="qwen/qwen3.6-27b",
     temperature=0.1,
-    max_tokens=1024,
+    max_tokens=4096,
 )
 
 print("Building BM25 index...")
@@ -197,10 +197,12 @@ JSON array:"""
 
     try:
         raw = _llm.invoke(rerank_prompt)
-        response = _strip_think(raw.content if hasattr(raw, "content") else str(raw))
+        response = raw.content if hasattr(raw, "content") else str(raw)
 
-        # Strip markdown code blocks if model wraps response
-        response = response.replace("```json", "").replace("```", "").strip()
+
+        # Strip Qwen think block BEFORE any JSON extraction
+        if "</think>" in response:
+            response = response.split("</think>", 1)[-1].strip()
 
         # Extract the JSON array from response
         start = response.find("[")
@@ -371,10 +373,12 @@ JSON:"""
 
     try:
         raw = _llm.invoke(validation_prompt)
-        response = _strip_think(raw.content if hasattr(raw, "content") else str(raw))
+        response = raw.content if hasattr(raw, "content") else str(raw)
 
-        # Strip markdown if model wraps in backticks
-        response = response.replace("```json", "").replace("```", "").strip()
+        # Strip Qwen think block BEFORE any JSON extraction
+        if "</think>" in response:
+            response = response.split("</think>", 1)[-1].strip()
+        
 
         # Extract JSON object
         start = response.find("{")
