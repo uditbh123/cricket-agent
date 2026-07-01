@@ -67,6 +67,16 @@ _llm = ChatGroq(
 
 print("Building BM25 index...")
 
+def _strip_think(response: str) -> str:
+    """
+    Strip Qwen 3.6 reasoning blocks from LLM responses.
+    Qwen wraps internal reasoning in <think>...</think> before answering.
+    These blocks must be removed before parsing JSON responses.
+    """
+    if "</think>" in response:
+        return response.split("</think>", 1)[-1].strip()
+    return response.strip()
+
 # ── BM25 Helper Functions ────────────────────────────────────
 
 def _build_bm25() -> BM25Retriever:

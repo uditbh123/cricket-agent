@@ -22,7 +22,8 @@ app = FastAPI(
 # Without this, browsers block requests from React (port 5173)
 # to FastAPI (port 8000) — same-origin policy blocks cross-port requests.
 # allow_origins=["*"] is fine for development.
-# In production, replace * with your actual frontend URL (e.g. https://cricket-agent.vercel.app)
+# In production, replace * with your actual frontend URL.
+# Example: allow_origins=["https://cricket-agent.vercel.app"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -52,11 +53,12 @@ def build_history_text(history: List[Message], max_messages: int = 12) -> str:
     Convert conversation history into a formatted string for the LLM answer prompt.
 
     Limited to last 12 messages (6 full turns) to keep the prompt
-    from getting too long. Beyond that, context gets noisy.
+    from getting too long. Beyond that, context gets noisy and the
+    LLM loses focus on the current question.
 
     Format:
         User: what is the Nepal Premier League?
-        Assistant: The Nepal Premier League is...
+        Assistant: The Nepal Premier League is a T20 league...
         User: who won the first season?
     """
     if not history:
@@ -74,20 +76,26 @@ def build_retrieval_hint(history: List[Message]) -> str:
     """
     Build a short structured context hint for retrieval and topic extraction.
 
-    Uses last 4 messages (not 2) with proper User/Assistant labels so the
-    LLM can resolve follow-up references correctly.
+    Uses last 4 messages with proper User/Assistant labels so the LLM
+    can resolve follow-up references correctly.
 
-    Example — what the LLM sees:
+    Why 4 messages and not 2:
+        Old version joined last 2 messages as a raw string with no labels.
+        The LLM couldn't tell what was asked vs what was answered, so
+        follow-ups like "who won the first season of it?" failed to resolve
+        "it" back to "Nepal Premier League".
+
+    Why truncate assistant responses to 300 chars:
+        We only need enough to identify the topic being discussed.
+        Sending the full assistant response makes the retrieval query
+        too long and noisy, returning irrelevant chunks.
+
+    Example — what the LLM sees as retrieval_hint:
         User: what is NPL?
         Assistant: The Nepal Premier League (NPL) is a T20 league...
         User: who won the first season of it?
 
     With this structure, "it" clearly resolves to "Nepal Premier League".
-    Without labels (old version), the LLM couldn't tell what was asked
-    vs what was answered, so follow-ups failed.
-
-    Assistant responses are truncated to 300 chars — we only need enough
-    to identify the topic being discussed, not the full answer.
     """
     if not history:
         return ""
@@ -118,12 +126,12 @@ def ask_question(request: QuestionRequest):
     runs the full RAG pipeline, and streams the answer token by token.
 
     Pipeline:
-        1. Build history strings (full for LLM, short for retrieval)
+        1. Build history strings (full for LLM prompt, short for retrieval)
         2. Dynamically fetch missing Wikipedia knowledge
         3. Hybrid retrieval — vector search + BM25 keyword search
         4. Rerank chunks by relevance using LLM
         5. Validate context is sufficient to answer
-        6. Stream answer token by token
+        6. Stream answer token by token (filtering Qwen reasoning blocks)
 
     Stream events (newline-delimited JSON):
         {"type": "sources", "data": [...]}   — retrieved chunks
@@ -139,43 +147,50 @@ def ask_question(request: QuestionRequest):
             print(f"History : {len(request.history)} messages")
 
             # ── Step 1: Build history strings ────────────────
+            # Two different history formats for two different purposes:
+            #
             # history_text — full formatted history for the LLM answer prompt.
-            # Lets the LLM understand references like "this league", "him", "they".
+            # Lets the LLM resolve references like "this league", "him", "they".
             #
             # retrieval_hint — short structured snippet for retrieval.
-            # Used by ensure_knowledge and hybrid_retrieve to resolve
+            # Used by ensure_knowledge() and hybrid_retrieve() to resolve
             # follow-up questions like "who won the first season of it?"
             # back to the correct topic (e.g. Nepal Premier League).
             history_text = build_history_text(request.history)
             retrieval_hint = build_retrieval_hint(request.history)
 
             # ── Step 2: Dynamic knowledge fetching ───────────
-            # If the question is about something not in our DB,
-            # this fetches the Wikipedia article and adds it permanently.
+            # If the question mentions something not in our DB,
+            # this fetches the Wikipedia article and stores it permanently.
             # Uses retrieval_hint so follow-up questions fetch the right topic.
-            # Fault-tolerant — if Wikipedia is slow/down, we still answer
-            # from existing knowledge.
+            # Fault-tolerant — if Wikipedia is slow or down, we still
+            # attempt to answer from existing knowledge.
             ensure_knowledge(request.question, retrieval_hint)
 
             # ── Step 3: Hybrid retrieval ──────────────────────
             # Combines two complementary search strategies:
-            # - Vector search (ChromaDB): semantic similarity
+            #
+            # Vector search (ChromaDB): semantic similarity
             #   "little master" → finds Sachin Tendulkar chunks
-            # - BM25: exact keyword matching
-            #   "Muralitharan 800 wickets" → finds exact chunks
+            #   "fastest bowler" → finds Shoaib Akhtar chunks
+            #
+            # BM25: exact keyword matching
+            #   "Muralitharan 800 wickets" → finds chunks with those exact words
+            #
             # Returns up to 12 unique chunks combined from both.
             docs = hybrid_retrieve(request.question, retrieval_hint)
 
             # ── Step 4: Reranking ─────────────────────────────
             # LLM reads all 12 chunks and picks the 8 most relevant.
-            # Fixes cases where the embedding model retrieves wrong chunks
-            # (e.g. Terry Alderman chunks when asking about most Test wickets).
-            # Adds ~0.5s but dramatically improves answer accuracy.
+            # Fixes cases where the embedding model retrieves wrong chunks.
+            # Example: asking "most Test wickets" without reranking might
+            # return Terry Alderman chunks instead of Muralitharan chunks.
+            # Adds ~0.5s latency but dramatically improves answer accuracy.
             docs = rerank_docs(request.question, docs)
 
-            # Format chunks into a single context string for the prompt.
+            # Format chunks into a single context string.
             # format_docs also deduplicates — hybrid search often returns
-            # the same chunk from both vector and BM25.
+            # the same chunk from both vector and BM25 searches.
             sources = [doc.page_content for doc in docs]
             context = format_docs(docs)
 
@@ -186,11 +201,11 @@ def ask_question(request: QuestionRequest):
             # Key hallucination prevention step.
             # LLM checks: "Is this context actually sufficient to answer?"
             #
-            # HIGH / MEDIUM → proceed to answer
-            # LOW → return honest "I don't know" instead of a wrong answer
+            # HIGH / MEDIUM → proceed to generate answer
+            # LOW → return honest "I don't know" response
             #
             # Without this: LLM confidently hallucinates from irrelevant chunks.
-            # With this: LLM honestly admits when it doesn't have enough info.
+            # With this: LLM honestly admits when context is insufficient.
             validation = validate_context(request.question, context)
 
             if not validation["is_sufficient"]:
@@ -204,13 +219,13 @@ def ask_question(request: QuestionRequest):
 
             print(f"Validation PASSED: {validation['confidence']}")
 
-            # ── Step 6: Build prompt and stream answer ────────
+            # ── Step 6: Build prompt ──────────────────────────
             # Prompt structure:
             #   [strict rules] + [conversation history] + [context] + [question]
             #
-            # history_text lets the LLM resolve pronouns and references.
+            # history_text lets the LLM resolve pronouns and vague references.
             # We call it "Knowledge base" not "Wikipedia context" so the LLM
-            # doesn't leak source mentions into its answers.
+            # doesn't leak phrases like "based on Wikipedia..." into answers.
             prompt_text = f"""You are a cricket expert assistant.
 
 STRICT RULES:
@@ -233,21 +248,66 @@ Current Question: {request.question}
 
 Answer:"""
 
-            # Stream answer token by token.
-            # Groq returns AIMessageChunk objects — we extract .content from each.
-            # Each token is sent immediately so the frontend displays words
-            # as they arrive, like ChatGPT.
+            # ── Step 7: Stream answer (with Qwen think-block filter) ──
+            # Qwen 3.6 is a reasoning model. Before answering, it thinks
+            # out loud inside <think>...</think> tags. This internal reasoning
+            # is useful for accuracy but must never be shown to users.
+            #
+            # Strategy:
+            # - Buffer all tokens until </think> is detected
+            # - Once </think> appears, stream only what comes after it
+            # - If no <think> block at all (model skipped reasoning),
+            #   flush the buffer after 50 chars and stream normally
+            #
+            # This means the first few tokens are slightly delayed
+            # (buffered during thinking) but the final answer streams
+            # normally token by token.
+
+            buffer = ""         # accumulates tokens during think block
+            in_think_block = False
+            think_done = False  # True once we've passed </think>
+
             for chunk in llm.stream(prompt_text):
                 token = chunk.content if hasattr(chunk, "content") else str(chunk)
-                if token:
-                    yield json.dumps({"type": "token", "data": token}) + "\n"
+                if not token:
+                    continue
+
+                if not think_done:
+                    buffer += token
+
+                    # Detect opening of think block
+                    if "<think>" in buffer:
+                        in_think_block = True
+
+                    # Detect closing of think block
+                    if "</think>" in buffer:
+                        in_think_block = False
+                        think_done = True
+                        # Split on </think> and take everything after it
+                        # lstrip removes leading newlines Qwen adds after thinking
+                        after_think = buffer.split("</think>", 1)[-1].lstrip("\n")
+                        if after_think:
+                            yield json.dumps({"type": "token", "data": after_think}) + "\n"
+                        continue
+
+                    # Model skipped reasoning entirely — no <think> tag found
+                    # after buffering 50 chars. Flush buffer and stream normally.
+                    if not in_think_block and len(buffer) > 50 and "<think>" not in buffer:
+                        think_done = True
+                        yield json.dumps({"type": "token", "data": buffer}) + "\n"
+
+                    continue
+
+                # Think block is done — stream every subsequent token immediately
+                yield json.dumps({"type": "token", "data": token}) + "\n"
 
             # Signal to frontend that streaming is complete.
             yield json.dumps({"type": "done"}) + "\n"
             print("Response complete")
 
         except Exception as e:
-            # Never crash silently — always send something to the frontend.
+            # Never crash silently — always send an error to the frontend
+            # so the user sees something instead of a frozen spinner.
             print(f"Error in stream_response: {e}")
             yield json.dumps({
                 "type": "token",
@@ -271,13 +331,15 @@ def summarize_old_history(history: List[Message], llm) -> str:
     - Short history (≤12 messages): use directly, no summary needed
     - Long history (>12 messages): summarize old + keep last 6 verbatim
 
-    This function exists but is not yet wired into the main request flow.
-    To enable: replace build_history_text(request.history) in stream_response
-    with summarize_old_history(request.history, llm).
+    NOT YET WIRED INTO THE MAIN FLOW.
+    To enable: in stream_response(), replace:
+        history_text = build_history_text(request.history)
+    with:
+        history_text = summarize_old_history(request.history, llm)
 
-    Example output:
+    Example output this produces:
         [Earlier in conversation: User asked about Nepal Premier League.
-        Agent explained it's a T20 league with 8 franchise teams.]
+        Agent explained it's a T20 franchise league with 8 teams.]
 
         User: who won the first season?
         Assistant: Janakpur Bolts won the first season.
@@ -286,6 +348,7 @@ def summarize_old_history(history: List[Message], llm) -> str:
     if len(history) <= 12:
         return build_history_text(history)
 
+    # Split into old (to summarize) and recent (to keep verbatim)
     old_messages = history[:-6]
     recent_messages = history[-6:]
 
@@ -295,7 +358,8 @@ def summarize_old_history(history: List[Message], llm) -> str:
     ])
 
     summary_prompt = f"""Summarize this cricket conversation in 2-3 sentences.
-Focus on the cricket topics discussed and key facts mentioned:
+Focus on the cricket topics discussed and key facts mentioned.
+Be specific — include names, tournaments, and statistics if mentioned.
 
 {old_text}
 
@@ -304,6 +368,9 @@ Summary:"""
     try:
         raw = llm.invoke(summary_prompt)
         summary = raw.content if hasattr(raw, "content") else str(raw)
+        # Strip any <think> blocks from Qwen reasoning model
+        if "</think>" in summary:
+            summary = summary.split("</think>", 1)[-1]
         summary = summary.strip()
     except Exception:
         summary = ""
